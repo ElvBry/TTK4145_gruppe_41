@@ -1,0 +1,13 @@
+# Compiled files
+*.o
+*.exe
+
+# C binaries (no extension)
+Exercise1/3 - shared variable/c/foo
+Exercise1/5 - bounded buffer/c/main
+
+# Rust
+target/
+
+# Go
+*.exe
