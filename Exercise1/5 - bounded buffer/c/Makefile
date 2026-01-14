@@ -4,7 +4,7 @@ CFLAGS = -Wall -g -std=gnu99
 LDFLAGS = -lpthread -g
 SRC = main.c ringbuf.c
 
-TARGET = boundedbuffer
+TARGET = main
 
 all: $(TARGET)
 
