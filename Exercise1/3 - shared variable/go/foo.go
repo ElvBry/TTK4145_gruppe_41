@@ -5,10 +5,9 @@ package main
 import (
 	. "fmt"
 	"runtime"
-	"time"
 )
 
-var i = 0
+var i = -1
 
 func incrementing(ch, doneChan chan bool) {
 	for range 1000000 {
@@ -25,29 +24,40 @@ func decrementing(ch, doneChan chan bool) {
 	doneChan <- true
 }
 
-func server(iChan, deChan, doneChan chan bool) {
+func main() {
+	// What does GOMAXPROCS do? What happens if you set it to 1?
+	// Tested, did not observe difference when using time to check performance
+	runtime.GOMAXPROCS(2)
+	iChan := make(chan bool, 1000000)
+	dChan := make(chan bool, 1000000)
+	doneChan := make(chan bool, 2)
+
+	go incrementing(iChan, doneChan)
+	go decrementing(dChan, doneChan)
+
+	done := 2
 	for {
 		select {
 		case <-iChan:
 			i++
-		case <-deChan:
+		case <-dChan:
 			i--
+		case <-doneChan:
+			done--
+			if done == 0 {
+				// Drain any remaining messages from both channels
+				for {
+					select {
+					case <-iChan:
+						i++
+					case <-dChan:
+						i--
+					default:
+						Println("The magic number is:", i)
+						return
+					}
+				}
+			}
 		}
 	}
-}
-
-func main() {
-	// What does GOMAXPROCS do? What happens if you set it to 1?
-	runtime.GOMAXPROCS(2)
-	iChan := make(chan bool)
-	dChan := make(chan bool)
-	doneChan := make(chan bool)
-
-	go incrementing(iChan)
-	decrementing(dChan)
-
-	// We have no direct way to wait for the completion of a goroutine (without additional synchronization of some sort)
-	// We will do it properly with channels soon. For now: Sleep.
-	time.Sleep(500 * time.Millisecond)
-	Println("The magic number is:", i)
 }
