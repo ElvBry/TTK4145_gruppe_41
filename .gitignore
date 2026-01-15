@@ -1,13 +1,21 @@
-# Compiled files
-*.o
-*.exe
+# Build directories
+build/
+out/
+cmake-build-*/
 
-# C binaries (no extension)
+# CMake generated
+compile_commands.json
+
+# Clangd cache
+*.cache/
+
+# Compiled binaries and libraries
 Exercise1/3 - shared variable/c/foo
 Exercise1/5 - bounded buffer/c/main
-
-# Rust
-target/
-
-# Go
 *.exe
+*.out
+*.o
+*.so
+*.a
+*.dylib
+*.dll
