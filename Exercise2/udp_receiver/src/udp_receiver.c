@@ -94,8 +94,13 @@ int main(int argc, char **argv) {
     }
     LOGD(TAG, "Bound socket to port");
 
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    struct sigaction sa = {
+        .sa_handler = signal_handler,
+        .sa_flags = 0 // Allow for interrupt
+    };
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     LOGI(TAG, "Listening on port %d", my_port);
 

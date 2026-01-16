@@ -108,8 +108,13 @@ int main(int argc, char **argv) {
     };
     inet_pton(AF_INET, dest_ip, &dest_addr.sin_addr);
 
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    struct sigaction sa = {
+        .sa_handler = signal_handler,
+        .sa_flags = 0 // Allow for interrupt
+    };
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
 
     LOGD(TAG, "Sending to port %d", dest_port);
