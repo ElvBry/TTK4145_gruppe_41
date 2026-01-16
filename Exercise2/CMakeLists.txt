@@ -19,4 +19,5 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_subdirectory(common)
 add_subdirectory(udp_receiver)
-add_subdirectory(udp_sender)
+add_subdirectory(tcp_receiver)
+add_subdirectory(udp_tcp_sender)

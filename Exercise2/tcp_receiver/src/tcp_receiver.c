@@ -10,14 +10,15 @@
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #include "log_helper/log_helper.h"
 
-#define PROTO_TAG "[UDP] "
+#define PROTO_TAG "[TCP] "
 
 #define DEFAULT_PORT 8080
 #define DEFAULT_BUFFER_SIZE 1024
+#define DEFAULT_BACKLOG 5
 
 #define REM_TRAIL // optional macro to remove trailing newline
 
-static const char *TAG = "udp_receiver";
+static const char *TAG = "tcp_receiver";
 
 static volatile sig_atomic_t running = 1;
 
@@ -74,13 +75,16 @@ int main(int argc, char **argv) {
     }
     LOGD(TAG, "buffer size: %d, port: %d, repetitions: %d", buffer_size, my_port, repetitions);
 
-    int udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_rx_socket < 0) {
+    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd < 0) {
         LOGE_ERRNO(TAG, "Failed to create socket");
         return EXIT_FAILURE;
     }
+    LOGD(TAG, PROTO_TAG "Created listen socket");
 
-    LOGD(TAG, PROTO_TAG "Created rx socket");
+    // Allow port reuse for quick restarts
+    int optval = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
     struct sockaddr_in my_addr = {
         .sin_family = AF_INET,
@@ -88,13 +92,19 @@ int main(int argc, char **argv) {
         .sin_port = htons(my_port)
     };
 
-    int result = bind(udp_rx_socket, (struct sockaddr *)&my_addr, sizeof(my_addr));
+    int result = bind(listen_fd, (struct sockaddr *)&my_addr, sizeof(my_addr));
     if (result < 0) {
         LOGE_ERRNO(TAG, "Could not bind socket to port %d", my_port);
-        close(udp_rx_socket);
+        close(listen_fd);
         return EXIT_FAILURE;
     }
     LOGD(TAG, PROTO_TAG "Bound socket to port");
+
+    if (listen(listen_fd, DEFAULT_BACKLOG) < 0) {
+        LOGE_ERRNO(TAG, "listen() failed");
+        close(listen_fd);
+        return EXIT_FAILURE;
+    }
 
     struct sigaction sa = {
         .sa_handler = signal_handler,
@@ -106,56 +116,75 @@ int main(int argc, char **argv) {
 
     LOGI(TAG, PROTO_TAG "Listening on port %d", my_port);
 
-    struct sockaddr_in peer_addr;
-    socklen_t addr_len = sizeof(peer_addr);
     char *rx_buf = malloc(buffer_size);
     if (rx_buf == NULL) {
         LOGE(TAG, "Failed to allocate receive buffer of size: %d", buffer_size);
-        close(udp_rx_socket);
+        close(listen_fd);
         return EXIT_FAILURE;
     }
-    while (running) {
-        addr_len = sizeof(peer_addr);
-        ssize_t bytes_received = recvfrom(udp_rx_socket, rx_buf, buffer_size - 1, MSG_TRUNC,
-                                          (struct sockaddr *)&peer_addr, &addr_len);
 
-        if (bytes_received < 0) {
+    // Outer loop: accept connections
+    while (running) {
+        struct sockaddr_in client_addr;
+        socklen_t addr_len = sizeof(client_addr);
+
+        LOGD(TAG, PROTO_TAG "Waiting for connection...");
+        int client_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &addr_len);
+        if (client_fd < 0) {
             if (errno == EINTR) {
                 continue;  // interrupted by signal, check running flag
             }
-            LOGE_ERRNO(TAG, "recvfrom() failed.");
-            free(rx_buf);
-            close(udp_rx_socket);
-            return EXIT_FAILURE;
+            LOGE_ERRNO(TAG, "accept() failed");
+            break;
         }
 
-        if (bytes_received > buffer_size - 1) {
-            LOGW(TAG, "Message truncated: received %zd, buffer only %d",
-                 bytes_received, buffer_size - 1);
+        LOGI(TAG, PROTO_TAG "Client connected: %s:%d",
+             inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+        // Inner loop: receive from this client
+        while (running) {
+            ssize_t bytes_received = recv(client_fd, rx_buf, buffer_size - 1, 0);
+
+            if (bytes_received < 0) {
+                if (errno == EINTR) {
+                    continue;  // interrupted by signal, check running flag
+                }
+                LOGE_ERRNO(TAG, "recv() failed");
+                break;
+            }
+
+            if (bytes_received == 0) {
+                LOGI(TAG, PROTO_TAG "Client disconnected: %s:%d",
+                     inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                break;
+            }
+
+            rx_buf[bytes_received] = '\0';
+
+            #ifdef REM_TRAIL
+            while (bytes_received > 0 &&
+                (rx_buf[bytes_received - 1] == '\n' || rx_buf[bytes_received - 1] == '\r')) {
+                rx_buf[--bytes_received] = '\0';
+            }
+            #endif
+
+            LOGI(TAG, PROTO_TAG "Received %zd bytes from %s:%d -- Message: %s",
+                bytes_received, inet_ntoa(client_addr.sin_addr),
+                ntohs(client_addr.sin_port), rx_buf);
+
+            if (repetitions > 0) repetitions--;
+            if (repetitions == 0) {
+                running = 0;  // exit outer loop too
+                break;
+            }
         }
-
-        rx_buf[bytes_received] = '\0';
-
-        #ifdef REM_TRAIL
-        while (bytes_received > 0 &&
-            (rx_buf[bytes_received - 1] == '\n' || rx_buf[bytes_received - 1] == '\r')) {
-            rx_buf[--bytes_received] = '\0';
-        }
-        #endif
-
-        LOGI(TAG, PROTO_TAG "Received %zd bytes from %s:%d -- Message: %s",
-            bytes_received, inet_ntoa(peer_addr.sin_addr),
-            ntohs(peer_addr.sin_port), rx_buf);
-
-        if (repetitions > 0) repetitions--;
-        if (repetitions == 0) break;
+        close(client_fd);
     }
-    
 
     if (!running) {
         LOGD(TAG, "Received shutdown signal, exiting gracefully");
     }
-    close(udp_rx_socket);
+    close(listen_fd);
     free(rx_buf);
     return EXIT_SUCCESS;
 }
@@ -185,7 +214,7 @@ static inline int parse_size(const char *str) {
     if (errno != 0 || endptr == str || *endptr != '\0') {
         return -1;
     }
-    
+
     if (size > 65507 || size < 1) {
         return -1;
     }
@@ -205,6 +234,6 @@ static inline int parse_repetitions(const char *str) {
     if (repetitions < -1 || repetitions > INT_MAX) {
         return -2;
     }
-    
+
     return (int)repetitions;
 }

@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <string.h>
 #include <signal.h>
 
@@ -14,12 +15,14 @@
 
 #define DEFAULT_PORT 8080
 #define DEFAULT_MAX_MSG_SIZE 65507
-#define DEFAULT_IP "127.0.0.1"
+#define DEFAULT_HOST "127.0.0.1"
 #define DEFAULT_SLEEP_PERIOD_S 5
 
-static const char *TAG = "udp_sender";
+static const char *TAG = "udp_tcp_sender";
 
 static volatile sig_atomic_t running = 1;
+
+typedef enum { PROTO_UDP, PROTO_TCP } protocol_t;
 
 static void signal_handler(int sig) {
     (void)sig;
@@ -29,7 +32,6 @@ static void signal_handler(int sig) {
 static inline int parse_port(const char *str);
 static inline int parse_size(const char *str);
 static inline int parse_repetitions(const char *str);
-static inline int parse_ip(const char *str, char *dest, size_t dest_size);
 static inline long parse_period(const char *str);
 
 #define CHECK(result, tag, fmt, ...) \
@@ -39,20 +41,25 @@ static inline long parse_period(const char *str);
     } } while(0)
 
 #define HELP_MSG() \
-    LOGI(TAG, "[-h (this message)] [-p <port 1-65535>] [-m \"message\"] [-s <max_msg_size> (%d by default)] [-a <ip address>] [-r <repetitions -1-%d> (infinite by default)] [-t <period_s> (%d by default)]\n", DEFAULT_MAX_MSG_SIZE, INT_MAX, DEFAULT_SLEEP_PERIOD_S)
+    LOGI(TAG, "[-h (this message)] [-T (use TCP instead of UDP)] [-p <port 1-65535>] [-m \"message\"] [-s <max_msg_size> (%d by default)] [-a <host/ip address>] [-r <repetitions -1-%d> (infinite by default)] [-t <period_s> (%d by default)]\n", DEFAULT_MAX_MSG_SIZE, INT_MAX, DEFAULT_SLEEP_PERIOD_S)
 
 
 int main(int argc, char **argv) {
-    int  dest_port      = DEFAULT_PORT;
-    char dest_ip[16]    = DEFAULT_IP;
-    long sleep_period_s = DEFAULT_SLEEP_PERIOD_S;
-    int  repetitions    = -1; //infinite by default
+    int         dest_port = DEFAULT_PORT;
+    const char *dest_host = DEFAULT_HOST;
+    long sleep_period_s   = DEFAULT_SLEEP_PERIOD_S;
+    int  repetitions      = -1; //infinite by default
+
     int  max_msg_size   = DEFAULT_MAX_MSG_SIZE;
-    const char *message = "";
     int  msg_size       = 0;
+    const char *message = "";
+    protocol_t protocol = PROTO_UDP;
     int  opt;
-    while ((opt = getopt(argc, argv, "p:m:s:a:r:t:h")) != -1) {
+    while ((opt = getopt(argc, argv, "Tp:m:s:a:r:t:h")) != -1) {
         switch (opt) {
+            case 'T':
+                protocol = PROTO_TCP;
+                break;
             case 'p':
                 dest_port = parse_port(optarg);
                 CHECK(dest_port, TAG, "Invalid port: %s (must be between 1-65535)", optarg);
@@ -65,7 +72,7 @@ int main(int argc, char **argv) {
                 CHECK(max_msg_size, TAG, "Invalid size: %s (must be between 0-65507)", optarg);
                 break;
             case 'a':
-                CHECK(parse_ip(optarg, dest_ip, sizeof(dest_ip)), TAG, "Invalid IP: %s", optarg);
+                dest_host = optarg;
                 break;
             case 'r':
                 repetitions = parse_repetitions(optarg);
@@ -95,18 +102,41 @@ int main(int argc, char **argv) {
         msg_size = max_msg_size;
     }
 
-    int  udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_tx_socket < 0) {
-        LOGE_ERRNO(TAG, "failed to create socket");
+    const char *proto_str = (protocol == PROTO_TCP) ? "TCP" : "UDP";
+
+    struct addrinfo hints = {
+        .ai_family = AF_INET,
+        .ai_socktype = (protocol == PROTO_TCP) ? SOCK_STREAM : SOCK_DGRAM
+    };
+    struct addrinfo *res;
+
+    char port_str[6];
+    snprintf(port_str, sizeof(port_str), "%d", dest_port);
+
+    int err = getaddrinfo(dest_host, port_str, &hints, &res);
+    if (err != 0) {
+        LOGE(TAG, "getaddrinfo failed: %s", gai_strerror(err));
         return EXIT_FAILURE;
     }
-    LOGD(TAG, "Created tx socket");
 
-    struct sockaddr_in dest_addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(dest_port)
-    };
-    inet_pton(AF_INET, dest_ip, &dest_addr.sin_addr);
+    int sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sockfd < 0) {
+        LOGE_ERRNO(TAG, "Failed to create socket");
+        freeaddrinfo(res);
+        return EXIT_FAILURE;
+    }
+    LOGD(TAG, "[%s] Created socket", proto_str);
+
+    // TCP requires connection, UDP uses sendto()
+    if (protocol == PROTO_TCP) {
+        if (connect(sockfd, res->ai_addr, res->ai_addrlen) < 0) {
+            LOGE_ERRNO(TAG, "connect() failed");
+            close(sockfd);
+            freeaddrinfo(res);
+            return EXIT_FAILURE;
+        }
+        LOGD(TAG, "[%s] Connected to %s:%d", proto_str, dest_host, dest_port);
+    }
 
     struct sigaction sa = {
         .sa_handler = signal_handler,
@@ -116,30 +146,36 @@ int main(int argc, char **argv) {
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
-
-    LOGD(TAG, "Sending to port %d", dest_port);
+    LOGI(TAG, "[%s] Sending to %s:%d", proto_str, dest_host, dest_port);
     while (running) {
-        ssize_t bytes_sent = sendto(udp_tx_socket, message, msg_size, 0,
-                                (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        ssize_t bytes_sent;
+        if (protocol == PROTO_TCP) {
+            bytes_sent = send(sockfd, message, msg_size, 0);
+        } else {
+            bytes_sent = sendto(sockfd, message, msg_size, 0,
+                                res->ai_addr, res->ai_addrlen);
+        }
         if (bytes_sent < 0) {
-            LOGE_ERRNO(TAG, "sendto() failed.");
-            close(udp_tx_socket);
+            if (errno == EINTR) continue;
+            LOGE_ERRNO(TAG, "send() failed");
+            close(sockfd);
+            freeaddrinfo(res);
             return EXIT_FAILURE;
         }
-        LOGI(TAG, "Sent %zd bytes to %s:%d -- Message: %.*s",
-            bytes_sent, inet_ntoa(dest_addr.sin_addr),
-            ntohs(dest_addr.sin_port), msg_size, message);
+        LOGI(TAG, "[%s] Sent %zd bytes -- Message: %.*s",
+            proto_str, bytes_sent, msg_size, message);
 
         if (repetitions > 0)  repetitions--;
         if (repetitions == 0) break;
 
         sleep(sleep_period_s);
     }
-    
+
     if (!running) {
         LOGD(TAG, "Received shutdown signal, exiting gracefully");
     }
-    close(udp_tx_socket);
+    close(sockfd);
+    freeaddrinfo(res);
     return EXIT_SUCCESS;
 }
 
@@ -167,7 +203,7 @@ static inline int parse_size(const char *str) {
     if (errno != 0 || endptr == str || *endptr != '\0') {
         return -1;
     }
-    
+
     if (size > 65507 || size < 0) {
         return -1;
     }
@@ -191,26 +227,6 @@ static inline int parse_repetitions(const char *str) {
     return (int)repetitions;
 }
 
-static inline int parse_ip(const char *str, char *dest, size_t dest_size) {
-    if (str == NULL || dest == NULL) {
-        return -1;
-    }
-
-    size_t len = strlen(str);
-    if (len == 0 || len >= dest_size) {
-        return -1;
-    }
-
-    struct in_addr addr;
-    if (inet_pton(AF_INET, str, &addr) != 1) {
-        return -1;
-    }
-
-    strncpy(dest, str, dest_size - 1);
-    dest[dest_size - 1] = '\0';
-    return 0;
-}
-
 static inline long parse_period(const char *str) {
     char *endptr;
     errno = 0;
@@ -226,4 +242,3 @@ static inline long parse_period(const char *str) {
 
     return period;
 }
-
