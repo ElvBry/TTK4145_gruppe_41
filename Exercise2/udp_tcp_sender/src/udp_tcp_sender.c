@@ -125,6 +125,17 @@ int main(int argc, char **argv) {
         freeaddrinfo(res);
         return EXIT_FAILURE;
     }
+
+    // Enable broadcast for UDP sockets (required for 255.255.255.255)
+    if (protocol == PROTO_UDP) {
+        int broadcast = 1;
+        if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0) {
+            LOGE_ERRNO(TAG, "Failed to set SO_BROADCAST");
+            close(sockfd);
+            freeaddrinfo(res);
+            return EXIT_FAILURE;
+        }
+    }
     LOGD(TAG, "[%s] Created socket", proto_str);
 
     // TCP requires connection, UDP uses sendto()
