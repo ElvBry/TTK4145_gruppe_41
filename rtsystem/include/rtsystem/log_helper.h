@@ -23,7 +23,7 @@ int main(void) {
 #define LOG_HELPER_H
 
 #ifdef ASYNC_LOG_HELPER_H
-    #error "Cannot use Library A together with Library B"
+    #error "Cannot use ASYNC_LOG_HELPER together with LOG_HELPER"
 #endif
 
 #include <stdio.h>

@@ -19,6 +19,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+add_subdirectory(src/core)
 add_subdirectory(src/tasks)
 add_subdirectory(src/main)
 

@@ -7,6 +7,6 @@ target_include_directories(tasks PUBLIC
 )
 
 target_link_libraries(tasks PUBLIC
+    core
     Threads::Threads
-    rt
 )
