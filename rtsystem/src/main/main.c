@@ -31,13 +31,13 @@ int main(void) {
     sig_fd = signalfd(-1, &mask, 0);
     if (sig_fd == -1) {
         perror("signalfd");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if (log_task_init(LOG_QUEUE_SIZE, PRIORITY_LOG_TASK) != 0) {
         fprintf(stderr, "Failed to initialize log task\n");
         close(sig_fd);
-        return 1;
+        return EXIT_FAILURE;
     }
 
     LOGD(TAG, "rtsystem started");
@@ -89,5 +89,5 @@ int main(void) {
     log_task_cleanup();
     close(sig_fd);
 
-    return 0;
+    return EXIT_SUCCESS;
 }

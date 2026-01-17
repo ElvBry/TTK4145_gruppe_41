@@ -13,6 +13,7 @@
 #include <rtsystem/async_log_helper.h>
 
 #define LOG_POLL_TIMEOUT_MS 100
+#define LOG_TIME_RESOLUTION_NS 1000
 
 // Colors for printing
 #define COLOR_CYAN   "\033[36m"
@@ -44,7 +45,7 @@ static void print_log_message(const log_message_t* msg) {
 
     fprintf(stderr, "%02d:%02d:%02d.%03ld %s%s %s: %s" COLOR_RESET "\n",
             tm.tm_hour, tm.tm_min, tm.tm_sec,
-            msg->timestamp.tv_nsec / 1000000,
+            msg->timestamp.tv_nsec / LOG_TIME_RESOLUTION_NS,
             colors[msg->level],
             levels[msg->level],
             msg->tag,
