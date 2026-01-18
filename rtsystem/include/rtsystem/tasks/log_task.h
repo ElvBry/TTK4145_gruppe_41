@@ -19,7 +19,7 @@ extern int g_log_done_fd;
 // queue_size: number of log messages the queue can hold
 // priority: thread priority (0 for default, or SCHED_FIFO/RR priority 1-99)
 // Returns 0 on success, -1 on error
-int log_task_init(size_t queue_size, int priority);
+int log_task_init(const size_t queue_size, const int priority);
 
 // Signal log task to stop
 static inline void log_task_stop(void) {

@@ -8,10 +8,14 @@
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #include <rtsystem/async_log_helper.h>
 #include <rtsystem/tasks/log_task.h>
+#include <rtsystem/tasks/stdin_task.h>
 
 #define LOG_QUEUE_SIZE 64
+#define STDIN_LINE_BUF_SIZE 256
 
-#define PRIORITY_LOG_TASK 10
+// Set priority of task (should not exceed 50)
+#define PRIORITY_STDIN_TASK 12
+#define PRIORITY_LOG_TASK   10
 
 static const char* TAG = "main";
 
@@ -42,6 +46,12 @@ int main(void) {
 
     LOGD(TAG, "rtsystem started");
 
+    // Initialize other tasks
+    int err = stdin_task_init(STDIN_LINE_BUF_SIZE, PRIORITY_STDIN_TASK);
+    if (err < 0) {
+        LOGW(TAG, "error initializing stdin_task");
+    }
+
     // Main loop - wait for signals
     struct pollfd pfd = {
         .fd = sig_fd,
@@ -61,23 +71,42 @@ int main(void) {
     }
     LOGD(TAG, "received SIGINT, shutting down...");
 
-    // Stop other tasks here (when implemented)
-    // ...
+    // Stop all tasks except logging
+    stdin_task_stop();
+
+    // Poll for stdin_task completion or force kill on second SIGINT
+    struct pollfd stdin_wait_fds[2] = {
+        { .fd = g_stdin_handle.done_fd, .events = POLLIN },
+        { .fd = sig_fd,                  .events = POLLIN },
+    };
+
+    int ret = poll(stdin_wait_fds, 2, 1000);
+    if (ret > 0 && (stdin_wait_fds[0].revents & POLLIN)) {
+        // stdin_task finished gracefully
+    } else if (ret > 0 && (stdin_wait_fds[1].revents & POLLIN)) {
+        fprintf(stderr, "Forced stdin shutdown\n");
+        stdin_task_cancel();
+    } else {
+        fprintf(stderr, "stdin_task timeout, forcing shutdown\n");
+        stdin_task_cancel();
+    }
+    stdin_task_join();
+    stdin_task_destroy();
 
     // Stop log task last so it can drain remaining messages
     log_task_stop();
 
     // Poll for log_task completion or force kill on second SIGINT
-    struct pollfd wait_fds[2] = {
+    struct pollfd log_wait_fds[2] = {
         { .fd = g_log_done_fd, .events = POLLIN },
         { .fd = sig_fd,        .events = POLLIN },
     };
 
-    int ret = poll(wait_fds, 2, 3000);
+    ret = poll(log_wait_fds, 2, 3000);
 
-    if (ret > 0 && (wait_fds[0].revents & POLLIN)) {
+    if (ret > 0 && (log_wait_fds[0].revents & POLLIN)) {
         // log_task finished gracefully
-    } else if (ret > 0 && (wait_fds[1].revents & POLLIN)) {
+    } else if (ret > 0 && (log_wait_fds[1].revents & POLLIN)) {
         fprintf(stderr, "Forced shutdown\n");
         log_task_cancel();
     } else {

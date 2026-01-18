@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <sched.h>
 
+
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/async_log_helper.h>
@@ -56,7 +57,7 @@ static void* log_task(void* arg) {
     (void)arg;
     log_message_t msg;
 
-    LOGD(TAG, "logging started");
+    LOGD(TAG, "successfully initialized. Logging queue...");
 
     struct pollfd pfd = {
         .fd = g_log_queue.event_fd,
@@ -65,6 +66,11 @@ static void* log_task(void* arg) {
 
     while (g_log_running) {
         int ret = poll(&pfd, 1, LOG_POLL_TIMEOUT_MS);
+        if (ret == -1) {
+            fprintf(stderr, "%s : could not poll log queue: %s", TAG, strerror(errno));
+            errno = 0;
+            continue;
+        }
 
         if (ret > 0 && (pfd.revents & POLLIN)) {
             while (fifo_queue_receive(&g_log_queue, &msg) == 0) {
@@ -75,7 +81,7 @@ static void* log_task(void* arg) {
 
     // Drain remaining messages
     g_log_running = 1;
-    LOGD(TAG, "draining remaining messages...");
+    LOGD(TAG, "received shutdown signal, draining remaining messages...");
     g_log_running = 0;
     while (fifo_queue_receive(&g_log_queue, &msg) == 0) {
         print_log_message(&msg);
@@ -88,7 +94,7 @@ static void* log_task(void* arg) {
     return NULL;
 }
 
-int log_task_init(size_t queue_size, int priority) {
+int log_task_init(const size_t queue_size, const int priority) {
     if (fifo_queue_init(&g_log_queue, sizeof(log_message_t), queue_size) != 0) {
         perror("log_task_init: fifo_queue_init");
         return -1;
