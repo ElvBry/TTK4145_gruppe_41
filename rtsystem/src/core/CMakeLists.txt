@@ -1,6 +1,6 @@
 add_library(core STATIC
     fifo_queue.c
-    task.c
+    task_helper.c
 )
 
 target_include_directories(core PUBLIC

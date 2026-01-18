@@ -9,21 +9,25 @@ rtsystem
 │   └── rtsystem
 │       ├── async_log_helper.h
 │       ├── core
-│       │   └── fifo_queue.h
+│       │   ├── fifo_queue.h
+│       │   └── task_helper.h
 │       ├── log_helper.h
 │       └── tasks
-│           └── log_task.h
+│           ├── log_task.h
+│           └── stdin_task.h
 ├── README.md
 └── src
     ├── core
     │   ├── CMakeLists.txt
-    │   └── fifo_queue.c
+    │   ├── fifo_queue.c
+    │   └── task_helper.c
     ├── main
     │   ├── CMakeLists.txt
     │   └── main.c
     └── tasks
         ├── CMakeLists.txt
-        └── log_task.c
+        ├── log_task.c
+        └── stdin_task.c
 ```
 
 - `include/rtsystem/`       — shared headers

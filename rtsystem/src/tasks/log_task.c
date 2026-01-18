@@ -15,15 +15,56 @@
 
 #define LOG_POLL_TIMEOUT_MS 100
 #define LOG_TIME_RESOLUTION_NS 1000
+#define LOG_TAG_MIN_WIDTH 12
 
-// Colors for printing
+// Helper macros for stringifying LOG_TAG_MIN_WIDTH in format string
+#define STR(x) #x
+#define XSTR(x) STR(x)
+
+// Colors for log levels
 #define COLOR_CYAN   "\033[36m"
 #define COLOR_GREEN  "\033[32m"
 #define COLOR_YELLOW "\033[33m"
 #define COLOR_RED    "\033[31m"
 #define COLOR_RESET  "\033[0m"
 
-static const char* TAG = "log_task";
+// Colors for tags (256-color palette) - add more colors here to reduce hash collisions
+#define TAG_COLOR_PURPLE     "\033[38;5;141m"
+#define TAG_COLOR_ORANGE     "\033[38;5;179m"
+#define TAG_COLOR_TEAL       "\033[38;5;109m"
+#define TAG_COLOR_PINK       "\033[38;5;175m"
+#define TAG_COLOR_LIME       "\033[38;5;149m"
+#define TAG_COLOR_BLUE       "\033[38;5;74m"
+#define TAG_COLOR_LAVENDER   "\033[38;5;183m"
+#define TAG_COLOR_PEACH      "\033[38;5;216m"
+#define TAG_COLOR_MINT       "\033[38;5;121m"
+#define TAG_COLOR_CORAL      "\033[38;5;210m"
+#define TAG_COLOR_SKY        "\033[38;5;117m"
+
+static const char* tag_colors[] = {
+    TAG_COLOR_PURPLE,
+    TAG_COLOR_ORANGE,
+    TAG_COLOR_TEAL,
+    TAG_COLOR_PINK,
+    TAG_COLOR_LIME,
+    TAG_COLOR_BLUE,
+    TAG_COLOR_LAVENDER,
+    TAG_COLOR_PEACH,
+    TAG_COLOR_MINT,
+    TAG_COLOR_CORAL,
+    TAG_COLOR_SKY,
+};
+
+// Creates small hash to coloured tags for easier reading
+static const char* get_tag_color(const char* tag) {
+    unsigned hash = 0;
+    while (*tag) {
+        hash = hash * 31 + (unsigned char)*tag++;
+    }
+    return tag_colors[hash % (sizeof(tag_colors) / sizeof(tag_colors[0]))];
+}
+
+static const char *TAG = "log_task";
 
 // Global log queue (declared in async_log_helper.h)
 fifo_queue_t g_log_queue;
@@ -44,12 +85,14 @@ static void print_log_message(const log_message_t* msg) {
     struct tm tm;
     localtime_r(&msg->timestamp.tv_sec, &tm);
 
-    fprintf(stderr, "%02d:%02d:%02d.%03ld %s%s %s: %s" COLOR_RESET "\n",
+    fprintf(stderr, "%02d:%02d:%02d.%06ld %s%s %s%-" XSTR(LOG_TAG_MIN_WIDTH) "s%s: %s" COLOR_RESET "\n",
             tm.tm_hour, tm.tm_min, tm.tm_sec,
             msg->timestamp.tv_nsec / LOG_TIME_RESOLUTION_NS,
             colors[msg->level],
             levels[msg->level],
+            get_tag_color(msg->tag),
             msg->tag,
+            colors[msg->level],
             msg->message);
 }
 

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <signal.h>
 #include <unistd.h>
 #include <poll.h>
@@ -17,13 +18,22 @@
 #define PRIORITY_STDIN_TASK 12
 #define PRIORITY_LOG_TASK   10
 
-static const char* TAG = "main";
+#define TASK_SHUTDOWN_TIMEOUT_MS 1000
+
+static const char *TAG = "main";
 
 // Shared shutdown flags
 volatile sig_atomic_t g_running = 1;
 volatile sig_atomic_t g_sigint_count = 0;
 
 static int sig_fd = -1;
+
+// Array of all task arrays for unified shutdown
+static task_array_t* task_arrays[] = {
+    &g_stdin_tasks,
+    // Add more task arrays here as needed
+};
+static const size_t num_task_arrays = sizeof(task_arrays) / sizeof(task_arrays[0]);
 
 int main(void) {
     // Block SIGINT and use signalfd instead
@@ -47,9 +57,8 @@ int main(void) {
     LOGD(TAG, "rtsystem started");
 
     // Initialize other tasks
-    int err = stdin_task_init(STDIN_LINE_BUF_SIZE, PRIORITY_STDIN_TASK);
-    if (err < 0) {
-        LOGW(TAG, "error initializing stdin_task");
+    if (stdin_task_init(STDIN_LINE_BUF_SIZE, PRIORITY_STDIN_TASK) != 0) {
+        LOGE(TAG, "failed to initialize stdin_task");
     }
 
     // Main loop - wait for signals
@@ -61,37 +70,51 @@ int main(void) {
     while (g_running) {
         int ret = poll(&pfd, 1, -1);
 
+        if (ret < 0) {
+            LOGE_ERRNO(TAG, "Failed to poll signal file descriptor, SHOULD NOT HAPPEN: ");
+            return EXIT_FAILURE;
+        }
+
         if (ret > 0 && (pfd.revents & POLLIN)) {
             struct signalfd_siginfo info;
             read(sig_fd, &info, sizeof(info));
             g_sigint_count++;
             g_running = 0;
-            printf("\n"); // just for formatting
+            printf("\n");
         }
     }
     LOGD(TAG, "received SIGINT, shutting down...");
 
-    // Stop all tasks except logging
-    stdin_task_stop();
-
-    // Poll for stdin_task completion or force kill on second SIGINT
-    struct pollfd stdin_wait_fds[2] = {
-        { .fd = g_stdin_handle.done_fd, .events = POLLIN },
-        { .fd = sig_fd,                  .events = POLLIN },
-    };
-
-    int ret = poll(stdin_wait_fds, 2, 1000);
-    if (ret > 0 && (stdin_wait_fds[0].revents & POLLIN)) {
-        // stdin_task finished gracefully
-    } else if (ret > 0 && (stdin_wait_fds[1].revents & POLLIN)) {
-        fprintf(stderr, "Forced stdin shutdown\n");
-        stdin_task_cancel();
-    } else {
-        fprintf(stderr, "stdin_task timeout, forcing shutdown\n");
-        stdin_task_cancel();
+    // Stop all tasks (except log_task)
+    for (size_t i = 0; i < num_task_arrays; i++) {
+        task_array_stop_all(task_arrays[i]);
     }
-    stdin_task_join();
-    stdin_task_destroy();
+
+    // Poll for task completion or force cancel on second SIGINT
+    bool force_cancel = false;
+    for (size_t i = 0; i < num_task_arrays; i++) {
+        if (force_cancel) {
+            task_array_cancel_all(task_arrays[i]);
+            continue;
+        }
+
+        int ret = task_array_poll_all(task_arrays[i], sig_fd, TASK_SHUTDOWN_TIMEOUT_MS);
+        if (ret == -2) {
+            LOGW(TAG, "forced shutdown, cancelling all tasks");
+            force_cancel = true;
+            task_array_cancel_all(task_arrays[i]);
+        } else if (ret == -1) {
+            LOGW(TAG, "task array %zu timeout, cancelling", i);
+            task_array_cancel_all(task_arrays[i]);
+        }
+    }
+
+    // Join and destroy all tasks
+    for (size_t i = 0; i < num_task_arrays; i++) {
+        task_array_join_all(task_arrays[i]);
+        task_array_handles_destroy_all(task_arrays[i]);
+        task_array_destroy(task_arrays[i]);
+    }
 
     // Stop log task last so it can drain remaining messages
     log_task_stop();
@@ -102,16 +125,23 @@ int main(void) {
         { .fd = sig_fd,        .events = POLLIN },
     };
 
-    ret = poll(log_wait_fds, 2, 3000);
+    int ret = poll(log_wait_fds, 2, 3000);
 
-    if (ret > 0 && (log_wait_fds[0].revents & POLLIN)) {
+    if (ret < 0) {
+        perror("Failed to poll log file descriptor, SHOULD_NOT_HAPPEN: ");
+        return 0;
+    }
+
+    if (ret == 0) {
+        fprintf(stderr, "log_task timeout, forcing shutdown\n");
+        log_task_cancel();
+    } else if (log_wait_fds[0].revents & POLLIN) {
         // log_task finished gracefully
-    } else if (ret > 0 && (log_wait_fds[1].revents & POLLIN)) {
-        fprintf(stderr, "Forced shutdown\n");
+    } else if (log_wait_fds[1].revents & POLLIN) {
+        fprintf(stderr, "Forced log shutdown\n");
         log_task_cancel();
     } else {
-        fprintf(stderr, "Log task timeout, forcing shutdown\n");
-        log_task_cancel();
+        fprintf(stderr, "ILLEGAL STATE, SHOULD NOT HAPPEN\n");
     }
 
     log_task_join();

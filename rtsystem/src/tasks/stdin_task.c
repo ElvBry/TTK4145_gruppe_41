@@ -13,24 +13,34 @@ static const char *TAG = "stdin_task";
 
 extern volatile int g_running;
 
-// Global task handle
-task_handle_t g_stdin_handle;
+// Task array (capacity 1)
+task_array_t g_stdin_tasks;
+
+static task_handle_t handle;
 
 // Input buffer
 static char *line = NULL;
 
+static void stdin_cleanup(task_handle_t* self) {
+    (void)self;
+    if (line != NULL) {
+        free(line);
+        line = NULL;
+        LOGD(TAG, "freed input buffer");
+    }
+}
+
 static void *stdin_task(void *arg) {
-    stdin_arg_t *stdin_arg = (stdin_arg_t *)arg;
-    size_t line_buf_size = stdin_arg->buf_size;
+    size_t line_buf_size = *(size_t*)arg;
     struct pollfd fds = {
         .fd     = STDIN_FILENO,
         .events = POLLIN,
     };
 
-    g_stdin_handle.state = TASK_STATE_RUNNING;
-    LOGD(TAG, "successfully initialized. ready for input...");
+    handle.state = TASK_STATE_RUNNING;
+    LOGD(TAG, "ready for input...");
 
-    while (g_running && g_stdin_handle.state == TASK_STATE_RUNNING) {
+    while (g_running && handle.state == TASK_STATE_RUNNING) {
         int err = poll(&fds, 1, STDIN_POLL_TIMEOUT_MS);
 
         if (err == -1) {
@@ -47,11 +57,12 @@ static void *stdin_task(void *arg) {
 
         if (bytes_read == -1) {
             LOGW_ERRNO(TAG, "failed to read input: ");
+            errno = 0;
             continue;
         }
 
-        if (bytes_read == line_buf_size - 1) {
-            LOGW(TAG, "Message longer than or equal to: %zu bytes, splitting up into multiple parts", line_buf_size - 1);
+        if ((size_t)bytes_read == line_buf_size - 1) {
+            LOGW(TAG, "input >= %zu bytes, message might be split", line_buf_size - 1);
         }
 
         line[bytes_read] = '\0';
@@ -70,25 +81,40 @@ static void *stdin_task(void *arg) {
         LOGD(TAG, "input received: %s", line);
     }
 
-    LOGD(TAG, "received shutdown signal, exiting gracefully");
-    free(line);
-    line = NULL;
-    LOGD(TAG, "freed buffer, exiting...");
-
-    task_handle_mark_done(&g_stdin_handle);
+    LOGD(TAG, "exiting...");
+    task_handle_mark_done(&handle);
     return NULL;
 }
 
 int stdin_task_init(const size_t buf_size, const int priority) {
-    if (task_handle_init(&g_stdin_handle, "stdin_task") != 0) {
-        LOGE(TAG, "Failed to initialize task handle");
+    // Initialize task array (capacity 1 - only one stdin task)
+    if (task_array_init(&g_stdin_tasks, 1) != 0) {
+        LOGE(TAG, "failed to initialize task array");
+        return -1;
+    }
+
+    if (task_handle_init(&handle, "stdin") != 0) {
+        LOGE(TAG, "failed to initialize task handle");
+        task_array_destroy(&g_stdin_tasks);
+        return -1;
+    }
+
+    // Set cleanup callback
+    handle.on_cleanup = stdin_cleanup;
+
+    // Add to array (will fail if called twice due to capacity 1)
+    if (task_array_add(&g_stdin_tasks, &handle) != 0) {
+        LOGE(TAG, "stdin task already exists");
+        task_handle_destroy(&handle);
+        task_array_destroy(&g_stdin_tasks);
         return -1;
     }
 
     line = malloc(buf_size);
     if (!line) {
-        LOGE(TAG, "Malloc failed to initialize buffer of size %zu", buf_size);
-        task_handle_destroy(&g_stdin_handle);
+        LOGE(TAG, "malloc failed for buffer of size %zu", buf_size);
+        task_handle_destroy(&handle);
+        task_array_destroy(&g_stdin_tasks);
         return -1;
     }
 
@@ -102,33 +128,20 @@ int stdin_task_init(const size_t buf_size, const int priority) {
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
     }
 
-    stdin_arg_t arg = {.buf_size = buf_size};
-    int err = pthread_create(&g_stdin_handle.thread, &attr, stdin_task, &arg);
+    static size_t buf_size_arg;
+    buf_size_arg = buf_size;
+    int err = pthread_create(&handle.thread, &attr, stdin_task, &buf_size_arg);
     pthread_attr_destroy(&attr);
 
     if (err != 0) {
-        LOGE_ERRNO(TAG, "Could not perform pthread_create: ");
+        LOGE_ERRNO(TAG, "pthread_create failed: ");
+        errno = 0;
         free(line);
         line = NULL;
-        task_handle_destroy(&g_stdin_handle);
+        task_handle_destroy(&handle);
+        task_array_destroy(&g_stdin_tasks);
         return -1;
     }
 
     return 0;
-}
-
-void stdin_task_stop(void) {
-    g_stdin_handle.state = TASK_STATE_STOPPING;
-}
-
-void stdin_task_join(void) {
-    pthread_join(g_stdin_handle.thread, NULL);
-}
-
-void stdin_task_cancel(void) {
-    pthread_cancel(g_stdin_handle.thread);
-}
-
-void stdin_task_destroy(void) {
-    task_handle_destroy(&g_stdin_handle);
 }
