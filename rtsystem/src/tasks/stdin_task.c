@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
 #include <poll.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -61,14 +63,28 @@ static void *stdin_task(void *arg) {
             continue;
         }
 
-        if ((size_t)bytes_read == line_buf_size - 1) {
-            LOGW(TAG, "input >= %zu bytes, message might be split", line_buf_size - 1);
+        if (bytes_read == 0) {
+            continue;
         }
 
         line[bytes_read] = '\0';
 
+        // Check if input overflowed buffer (no newline at end means more data pending)
+        bool overflowed = (size_t)bytes_read == line_buf_size - 1 && line[bytes_read - 1] != '\n';
+        if (overflowed) {
+            LOGW(TAG, "input >= %zu bytes, flushing rest of data", line_buf_size - 1);
+
+            // Flush remaining input until newline
+            char flush_buf[64];
+            while (1) {
+                ssize_t n = read(STDIN_FILENO, flush_buf, sizeof(flush_buf));
+                if (n <= 0) break;
+                if (memchr(flush_buf, '\n', n)) break;
+            }
+        }
+
         // Strip trailing newline
-        if (bytes_read > 0 && line[bytes_read - 1] == '\n') {
+        if (line[bytes_read - 1] == '\n') {
             line[bytes_read - 1] = '\0';
             bytes_read--;
         }
