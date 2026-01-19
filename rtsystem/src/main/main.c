@@ -1,3 +1,4 @@
+#include "rtsystem/tasks/dispatcher_task.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -10,11 +11,14 @@
 #include <rtsystem/async_log_helper.h>
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/tasks/stdin_task.h>
+#include <rtsystem/tasks/dispatcher_task.h>
 
 #define LOG_QUEUE_SIZE 64
 #define STDIN_LINE_BUF_SIZE 256
+#define DISPATCH_QUEUE_SIZE 8
 
 // Set priority of task (should not exceed 50)
+#define PRIORITY_DISPATCH_TASK 40
 #define PRIORITY_STDIN_TASK 12
 #define PRIORITY_LOG_TASK   10
 
@@ -31,6 +35,7 @@ static int sig_fd = -1;
 // Array of all task arrays for unified shutdown
 static task_array_t* task_arrays[] = {
     &g_stdin_task,
+    &g_dispatcher_task,
     // Add more task arrays here as needed
 };
 static const size_t num_task_arrays = sizeof(task_arrays) / sizeof(task_arrays[0]);
@@ -57,8 +62,13 @@ int main(void) {
     LOGD(TAG, "rtsystem started");
 
     // Initialize other tasks
-    if (stdin_task_init(STDIN_LINE_BUF_SIZE, PRIORITY_STDIN_TASK) != 0) {
+    int err = stdin_task_init(STDIN_LINE_BUF_SIZE, PRIORITY_STDIN_TASK);
+    if (err != 0) {
         LOGE(TAG, "failed to initialize stdin_task");
+    }
+    err = dispatcher_task_init(DISPATCH_QUEUE_SIZE, PRIORITY_DISPATCH_TASK);
+    if (err != 0) {
+        LOGE(TAG, "failed to initialize dispatcher_task");
     }
 
     // Main loop - wait for signals

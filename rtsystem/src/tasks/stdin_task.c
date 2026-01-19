@@ -8,6 +8,8 @@
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #include <rtsystem/tasks/stdin_task.h>
 #include <rtsystem/async_log_helper.h>
+#include <rtsystem/core/cmd_parser.h>
+#include <rtsystem/tasks/dispatcher_task.h>
 
 #define STDIN_POLL_TIMEOUT_MS 100
 
@@ -45,13 +47,14 @@ static void *stdin_task(void *arg) {
     while (g_running && handle.state == TASK_STATE_RUNNING) {
         int err = poll(&fds, 1, STDIN_POLL_TIMEOUT_MS);
 
-        if (err != 0) {
+        if (err == -1) {
             LOGW_ERRNO(TAG, "could not poll STDIN: ");
             errno = 0;
             continue;
         }
 
-        if (!(fds.revents & POLLIN)) {
+        if (err == 0 || !(fds.revents & POLLIN)) {
+            // Timeout or no input ready
             continue;
         }
 
@@ -95,6 +98,53 @@ static void *stdin_task(void *arg) {
         }
 
         LOGD(TAG, "input received: %s", line);
+
+        // Tokenize into temporary stack array
+        char *argv_tmp[MAX_ARGS];
+        int argc = tokenize(line, argv_tmp);
+
+        if (argc == 0) {
+            continue;
+        }
+
+        // Deep copy for async processing (dispatcher will free)
+        char **argv = malloc(argc * sizeof(char*));
+        if (argv == NULL) {
+            LOGE(TAG, "malloc failed for argv");
+            continue;
+        }
+
+        bool alloc_failed = false;
+        for (int i = 0; i < argc; i++) {
+            argv[i] = strdup(argv_tmp[i]);
+            if (argv[i] == NULL) {
+                LOGE(TAG, "strdup failed");
+                for (int j = 0; j < i; j++) {
+                    free(argv[j]);
+                }
+                free(argv);
+                alloc_failed = true;
+                break;
+            }
+        }
+        if (alloc_failed) {
+            continue;
+        }
+
+        cmd_t command = {
+            .argc = argc,
+            .argv = argv,
+        };
+
+        err = set_cmd_type(&command);
+        if (err == -1) {
+            LOGE(TAG, "could not set command type");
+            cmd_free(&command);
+            continue;
+        }
+
+        dispatcher_add_to_queue(command);
+
     }
 
     LOGD(TAG, "exiting...");

@@ -109,13 +109,18 @@ static void* log_task(void* arg) {
 
     while (g_log_running) {
         int err = poll(&pfd, 1, LOG_POLL_TIMEOUT_MS);
-        if (err != 0) {
+        if (err == -1) {
             fprintf(stderr, "%s : could not poll log queue: %s", TAG, strerror(errno));
             errno = 0;
             continue;
         }
 
-        if (err > 0 && (pfd.revents & POLLIN)) {
+        if (err == 0) {
+            // Timeout, normal
+            continue;
+        }
+
+        if (pfd.revents & POLLIN) {
             err = fifo_queue_receive(&g_log_queue, &msg);
             if (err != 0) {
                 LOGW(TAG, "should not happen, check cause");

@@ -1,6 +1,7 @@
 add_library(tasks STATIC
     log_task.c
     stdin_task.c
+    dispatcher_task.c
 )
 
 target_include_directories(tasks PUBLIC
