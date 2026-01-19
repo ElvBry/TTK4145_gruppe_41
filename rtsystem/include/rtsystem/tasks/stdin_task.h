@@ -5,7 +5,7 @@
 #include <rtsystem/core/task_helper.h>
 
 // Task array for stdin tasks (capacity 1, only one stdin task allowed)
-extern task_array_t g_stdin_tasks;
+extern task_array_t g_stdin_task;
 
 // Allocates input buffer and initializes stdin_task for user input.
 // Stops when g_running flag is set to 0 or task_stop() is called

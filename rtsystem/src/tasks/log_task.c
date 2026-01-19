@@ -108,17 +108,20 @@ static void* log_task(void* arg) {
     };
 
     while (g_log_running) {
-        int ret = poll(&pfd, 1, LOG_POLL_TIMEOUT_MS);
-        if (ret == -1) {
+        int err = poll(&pfd, 1, LOG_POLL_TIMEOUT_MS);
+        if (err != 0) {
             fprintf(stderr, "%s : could not poll log queue: %s", TAG, strerror(errno));
             errno = 0;
             continue;
         }
 
-        if (ret > 0 && (pfd.revents & POLLIN)) {
-            while (fifo_queue_receive(&g_log_queue, &msg) == 0) {
-                print_log_message(&msg);
+        if (err > 0 && (pfd.revents & POLLIN)) {
+            err = fifo_queue_receive(&g_log_queue, &msg);
+            if (err != 0) {
+                LOGW(TAG, "should not happen, check cause");
+                continue;
             }
+            print_log_message(&msg);
         }
     }
 
@@ -138,7 +141,8 @@ static void* log_task(void* arg) {
 }
 
 int log_task_init(const size_t queue_size, const int priority) {
-    if (fifo_queue_init(&g_log_queue, sizeof(log_message_t), queue_size) != 0) {
+    int err = fifo_queue_init(&g_log_queue, sizeof(log_message_t), queue_size);
+    if (err != 0) {
         perror("log_task_init: fifo_queue_init");
         return -1;
     }
@@ -160,7 +164,7 @@ int log_task_init(const size_t queue_size, const int priority) {
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
     }
 
-    int err = pthread_create(&log_thread, &attr, log_task, NULL);
+    err = pthread_create(&log_thread, &attr, log_task, NULL);
     pthread_attr_destroy(&attr);
 
     if (err != 0) {

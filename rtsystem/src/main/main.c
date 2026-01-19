@@ -30,7 +30,7 @@ static int sig_fd = -1;
 
 // Array of all task arrays for unified shutdown
 static task_array_t* task_arrays[] = {
-    &g_stdin_tasks,
+    &g_stdin_task,
     // Add more task arrays here as needed
 };
 static const size_t num_task_arrays = sizeof(task_arrays) / sizeof(task_arrays[0]);

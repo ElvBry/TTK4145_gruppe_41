@@ -16,7 +16,7 @@ static const char *TAG = "stdin_task";
 extern volatile int g_running;
 
 // Task array (capacity 1)
-task_array_t g_stdin_tasks;
+task_array_t g_stdin_task;
 
 static task_handle_t handle;
 
@@ -45,7 +45,7 @@ static void *stdin_task(void *arg) {
     while (g_running && handle.state == TASK_STATE_RUNNING) {
         int err = poll(&fds, 1, STDIN_POLL_TIMEOUT_MS);
 
-        if (err == -1) {
+        if (err != 0) {
             LOGW_ERRNO(TAG, "could not poll STDIN: ");
             errno = 0;
             continue;
@@ -104,14 +104,15 @@ static void *stdin_task(void *arg) {
 
 int stdin_task_init(const size_t buf_size, const int priority) {
     // Initialize task array (capacity 1 - only one stdin task)
-    if (task_array_init(&g_stdin_tasks, 1) != 0) {
+    int err = task_array_init(&g_stdin_task, 1);
+    if (err != 0) {
         LOGE(TAG, "failed to initialize task array");
         return -1;
     }
-
-    if (task_handle_init(&handle, "stdin") != 0) {
+    err = task_handle_init(&handle, TAG);
+    if (err != 0) {
         LOGE(TAG, "failed to initialize task handle");
-        task_array_destroy(&g_stdin_tasks);
+        task_array_destroy(&g_stdin_task);
         return -1;
     }
 
@@ -119,10 +120,11 @@ int stdin_task_init(const size_t buf_size, const int priority) {
     handle.on_cleanup = stdin_cleanup;
 
     // Add to array (will fail if called twice due to capacity 1)
-    if (task_array_add(&g_stdin_tasks, &handle) != 0) {
-        LOGE(TAG, "stdin task already exists");
+    err = task_array_add(&g_stdin_task, &handle);
+    if (err != 0) {
+        LOGE(TAG, "task already exists");
         task_handle_destroy(&handle);
-        task_array_destroy(&g_stdin_tasks);
+        task_array_destroy(&g_stdin_task);
         return -1;
     }
 
@@ -130,7 +132,7 @@ int stdin_task_init(const size_t buf_size, const int priority) {
     if (!line) {
         LOGE(TAG, "malloc failed for buffer of size %zu", buf_size);
         task_handle_destroy(&handle);
-        task_array_destroy(&g_stdin_tasks);
+        task_array_destroy(&g_stdin_task);
         return -1;
     }
 
@@ -146,7 +148,7 @@ int stdin_task_init(const size_t buf_size, const int priority) {
 
     static size_t buf_size_arg;
     buf_size_arg = buf_size;
-    int err = pthread_create(&handle.thread, &attr, stdin_task, &buf_size_arg);
+    err = pthread_create(&handle.thread, &attr, stdin_task, &buf_size_arg);
     pthread_attr_destroy(&attr);
 
     if (err != 0) {
@@ -155,7 +157,7 @@ int stdin_task_init(const size_t buf_size, const int priority) {
         free(line);
         line = NULL;
         task_handle_destroy(&handle);
-        task_array_destroy(&g_stdin_tasks);
+        task_array_destroy(&g_stdin_task);
         return -1;
     }
 
