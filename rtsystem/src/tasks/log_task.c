@@ -21,26 +21,6 @@
 #define STR(x) #x
 #define XSTR(x) STR(x)
 
-// Colors for log levels
-#define COLOR_CYAN   "\033[36m"
-#define COLOR_GREEN  "\033[32m"
-#define COLOR_YELLOW "\033[33m"
-#define COLOR_RED    "\033[31m"
-#define COLOR_RESET  "\033[0m"
-
-// Colors for tags (256-color palette) - add more colors here to reduce hash collisions
-#define TAG_COLOR_PURPLE     "\033[38;5;141m"
-#define TAG_COLOR_ORANGE     "\033[38;5;179m"
-#define TAG_COLOR_TEAL       "\033[38;5;109m"
-#define TAG_COLOR_PINK       "\033[38;5;175m"
-#define TAG_COLOR_LIME       "\033[38;5;149m"
-#define TAG_COLOR_BLUE       "\033[38;5;74m"
-#define TAG_COLOR_LAVENDER   "\033[38;5;183m"
-#define TAG_COLOR_PEACH      "\033[38;5;216m"
-#define TAG_COLOR_MINT       "\033[38;5;121m"
-#define TAG_COLOR_CORAL      "\033[38;5;210m"
-#define TAG_COLOR_SKY        "\033[38;5;117m"
-
 static const char* tag_colors[] = {
     TAG_COLOR_PURPLE,
     TAG_COLOR_ORANGE,
@@ -53,6 +33,27 @@ static const char* tag_colors[] = {
     TAG_COLOR_MINT,
     TAG_COLOR_CORAL,
     TAG_COLOR_SKY,
+    TAG_COLOR_CHERRY,
+    TAG_COLOR_RASPBERRY,
+    TAG_COLOR_TAN,
+    TAG_COLOR_FOREST,
+    TAG_COLOR_AZURE,
+    TAG_COLOR_COBALT,
+    TAG_COLOR_BRICK,
+    TAG_COLOR_PLUM,
+    TAG_COLOR_SEAFOAM,
+    TAG_COLOR_LILAC,
+    TAG_COLOR_SALMON,
+    TAG_COLOR_MUSTARD,
+    TAG_COLOR_OCEAN,
+    TAG_COLOR_FUCHSIA,
+    /*TAG_COLOR_AQUA,
+    TAG_COLOR_CHARTREUSE,
+    TAG_COLOR_CHARCOAL,
+    TAG_COLOR_EBONY,
+    TAG_COLOR_DEEPRED,
+    TAG_COLOR_DEEPGREEN,
+    TAG_COLOR_DEEPBLUE,*/
 };
 
 // Creates small hash to coloured tags for easier reading
