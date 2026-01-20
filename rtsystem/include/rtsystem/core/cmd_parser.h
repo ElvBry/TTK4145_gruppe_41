@@ -19,7 +19,7 @@ int parse_TCP(cmd_t command);
 
 int parse_ECHO(cmd_t command, char **message);
 
-int parse_HELP(cmd_t command);
+int parse_HELP(cmd_t command, char **message);
 
 int parse_NIL(cmd_t command);
 

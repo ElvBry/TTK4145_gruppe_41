@@ -53,7 +53,7 @@ static void *dispatcher_task(void *arg) {
         int err = poll(&fds, 1, DISPATCHER_POLL_TIMEOUT_MS);
 
         if (err == 0) {
-            // Timout, normal and wanted for checking heartbeat later on with watchdog
+            // Timout, normal and wanted for checking g_running and if state or for checking heartbeat later on with watchdog
             continue;
         }
 
@@ -85,7 +85,8 @@ static void *dispatcher_task(void *arg) {
                 LOGI(TAG, "%s", message);
                 break;
             case HELP:
-                parse_HELP(command);
+                parse_HELP(command, &message);
+                LOGI(TAG, "%s", message);
                 break;
             case NIL:
                 LOGW(TAG, "received NIL, not a valid command (type 'help' for help)");
@@ -95,6 +96,7 @@ static void *dispatcher_task(void *arg) {
                 LOGE(TAG, "in default branch, should not happen");
                 break;
         }
+        message = "";
         
         cmd_free(&command);
     }

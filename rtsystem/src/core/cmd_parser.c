@@ -24,10 +24,10 @@
 #define TEMP_ECHO HASH4("echo")
 #define TEMP_HELP HASH4("help")
 // Needs to be allocated at runtime to make compiler happy
-static uint32_t HASH_UDP  = TEMP_UDP;
-static uint32_t HASH_TCP  = TEMP_TCP;
-static uint32_t HASH_ECHO = TEMP_ECHO;
-static uint32_t HASH_HELP = TEMP_HELP;
+const static uint32_t HASH_UDP  = TEMP_UDP;
+const static uint32_t HASH_TCP  = TEMP_TCP;
+const static uint32_t HASH_ECHO = TEMP_ECHO;
+const static uint32_t HASH_HELP = TEMP_HELP;
 
 #define TEST_FOR_COLLISION
 
@@ -46,6 +46,11 @@ static uint32_t hash_command(const char *str) {
 #include <rtsystem/tasks/dispatcher_task.h>
 
 const static char *TAG = "cmd_parser";
+static char *CMD_HELP_MESSAGE = "possible commands: \n\
+                                    UDP <to be added>\n\
+                                    TCP <to be added>\n\
+                                    echo -m <message> -h <this message>\n\
+                                    help <this entire message>";
 
 int tokenize(char *input, char **argv) {
     int argc = 0;
@@ -89,17 +94,17 @@ int set_cmd_type(cmd_t *result) {
 }
 
 int parse_UDP(cmd_t command) {
-    LOGI(TAG, "in UDP");
+    LOGD(TAG, "in UDP");
     return 0;
 }
 
 int parse_TCP(cmd_t command) {
-    LOGI(TAG, "in TCP");
+    LOGD(TAG, "in TCP");
     return 0;
 }
 
 int parse_ECHO(cmd_t command, char **message) {
-    LOGI(TAG, "in echo");
+    LOGD(TAG, "in echo");
     optind = 1;  // Reset getopt state for new parsing
     int opt;
     while ((opt = getopt(command.argc, command.argv, "m:h")) != -1) {
@@ -108,8 +113,8 @@ int parse_ECHO(cmd_t command, char **message) {
                 *message = optarg;
                 break;
             case 'h':
-                LOGI(TAG, "echo -m <message> -h <this message>");
-                break;
+                *message = "echo -m <message> -h <this message>";
+                return 0;
             default:
                 LOGW(TAG, "unknown option");
                 break;
@@ -118,13 +123,14 @@ int parse_ECHO(cmd_t command, char **message) {
     return 0;
 }
 
-int parse_HELP(cmd_t command) {
-    LOGI(TAG, "in help");
+int parse_HELP(cmd_t command, char **message) {
+    LOGD(TAG, "in help");
+    *message = CMD_HELP_MESSAGE;
     return 0;
 }
 
 int parse_NIL(cmd_t command) {
-    LOGI(TAG, "in NIL");
+    LOGD(TAG, "in NIL");
     return 0;
 }
 
