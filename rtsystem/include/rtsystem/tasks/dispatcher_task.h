@@ -1,11 +1,8 @@
 #ifndef DISPATCHER_TASK_H
 #define DISPATCHER_TASK_H
-// TODO: create fifo_queue of commands the dispatcher should handle
 
-#include "rtsystem/core/task_helper.h"
+#include <rtsystem/core/task_helper.h>
 #include <stddef.h>
-
-extern task_array_t g_dispatcher_task;
 
 typedef enum {
     UDP,
@@ -23,10 +20,15 @@ struct cmd {
     cmd_type_t cmd_type;
 };
 
+#define DEFAULT_DISPATCHER_TASK_PRIORITY 40
+
+// Task configuration for dispatcher_task
+// Use with task_create(arr, &dispatcher_task_config, &queue_size)
+// init_arg: pointer to size_t queue size
+extern const task_config_t dispatcher_task_config;
+
+// global way to add command to the dispatcher queue
 // Returns 0 on success, -1 on failure
 int dispatcher_add_to_queue(cmd_t command);
-
-// Returns 0 on success, -1 on failure
-int dispatcher_task_init(const size_t cmd_buf_size, const int priority);
 
 #endif

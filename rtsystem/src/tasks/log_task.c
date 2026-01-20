@@ -13,7 +13,7 @@
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/async_log_helper.h>
 
-#define LOG_POLL_TIMEOUT_MS 100
+#define LOG_POLL_TIMEOUT_MS 10
 #define LOG_TIME_RESOLUTION_NS 1000
 #define LOG_TAG_MIN_WIDTH 12
 

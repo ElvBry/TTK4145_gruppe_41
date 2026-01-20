@@ -1,4 +1,3 @@
-#include "rtsystem/tasks/dispatcher_task.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -9,6 +8,7 @@
 
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #include <rtsystem/async_log_helper.h>
+#include <rtsystem/core/task_helper.h>
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/tasks/stdin_task.h>
 #include <rtsystem/tasks/dispatcher_task.h>
@@ -17,37 +17,31 @@
 #define STDIN_LINE_BUF_SIZE 256
 #define DISPATCH_QUEUE_SIZE 8
 
-// Set priority of task (should not exceed 50)
-#define PRIORITY_MAIN 50 // Should be highest in order to catch sigint and cleanly shut down all other tasks
-#define PRIORITY_DISPATCH_TASK 40
-#define PRIORITY_STDIN_TASK 12
-#define PRIORITY_LOG_TASK   10
+#define PRIORITY_MAIN 50
+#define PRIORITY_LOG_TASK 10
 
 #define TASK_SHUTDOWN_TIMEOUT_MS 1000
+#define LOG_TASK_SHUTDOWN_TIMEOUT_MS 3000
 
 static const char *TAG = "main";
 
-// Shared shutdown flags
+// Shared global flag for graceful shutdown
 volatile sig_atomic_t g_running = 1;
-volatile sig_atomic_t g_sigint_count = 0;
 
 static int sig_fd = -1;
 
-// Array of all task arrays for unified shutdown
-static task_array_t* task_arrays[] = {
-    &g_stdin_task,
-    &g_dispatcher_task,
-    // Add more task arrays here as needed
-};
-static const size_t num_task_arrays = sizeof(task_arrays) / sizeof(task_arrays[0]);
+// System tasks array for stdin and dispatcher
+static task_array_t g_system_tasks;
 
 int main(void) {
-    struct sched_param param;
-    param.sched_priority = PRIORITY_MAIN;
-    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
+    // Set main thread priority
+    struct sched_param param = { .sched_priority = PRIORITY_MAIN };
+    int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+    if (err != 0) {
         perror("Failed to set main thread priority (try running with sudo)");
         return EXIT_FAILURE;
     }
+
     // Block SIGINT and use signalfd instead
     sigset_t mask;
     sigemptyset(&mask);
@@ -60,7 +54,9 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    if (log_task_init(LOG_QUEUE_SIZE, PRIORITY_LOG_TASK) != 0) {
+    // Initialize log task first (special case - not in task_array)
+    err = log_task_init(LOG_QUEUE_SIZE, PRIORITY_LOG_TASK); 
+    if (err != 0) {
         fprintf(stderr, "Failed to initialize log task\n");
         close(sig_fd);
         return EXIT_FAILURE;
@@ -68,14 +64,27 @@ int main(void) {
 
     LOGD(TAG, "rtsystem started");
 
-    // Initialize other tasks
-    int err = stdin_task_init(STDIN_LINE_BUF_SIZE, PRIORITY_STDIN_TASK);
+    // Initialize system tasks array
+    err = task_array_init(&g_system_tasks, 2);
     if (err != 0) {
-        LOGE(TAG, "failed to initialize stdin_task");
+        LOGE(TAG, "failed to initialize system tasks array");
+        log_task_stop();
+        log_task_join();
+        log_task_cleanup();
+        close(sig_fd);
+        return EXIT_FAILURE;
     }
-    err = dispatcher_task_init(DISPATCH_QUEUE_SIZE, PRIORITY_DISPATCH_TASK);
-    if (err != 0) {
-        LOGE(TAG, "failed to initialize dispatcher_task");
+
+    // Create system tasks
+    size_t stdin_buf_size = STDIN_LINE_BUF_SIZE;
+    size_t dispatch_queue_size = DISPATCH_QUEUE_SIZE;
+
+    if (task_create(&g_system_tasks, &stdin_task_config, &stdin_buf_size) == NULL) {
+        LOGE(TAG, "failed to create stdin_task");
+    }
+
+    if (task_create(&g_system_tasks, &dispatcher_task_config, &dispatch_queue_size) == NULL) {
+        LOGE(TAG, "failed to create dispatcher_task");
     }
 
     // Main loop - wait for signals
@@ -85,71 +94,69 @@ int main(void) {
     };
 
     while (g_running) {
+        // Waits for sig_fd to be set, happens on 
         int ret = poll(&pfd, 1, -1);
 
         if (ret < 0) {
-            LOGE_ERRNO(TAG, "Failed to poll signal file descriptor, SHOULD NOT HAPPEN: ");
-            return EXIT_FAILURE;
+            LOGE_ERRNO(TAG, "poll failed on signal fd: ");
+            break;
         }
 
         if (ret > 0 && (pfd.revents & POLLIN)) {
             struct signalfd_siginfo info;
             read(sig_fd, &info, sizeof(info));
-            g_sigint_count++;
             g_running = 0;
             printf("\n");
         }
     }
+    // Main loop finished
+
     LOGD(TAG, "received SIGINT, shutting down...");
 
-    // Stop all tasks (except log_task)
-    for (size_t i = 0; i < num_task_arrays; i++) {
-        task_array_stop_all(task_arrays[i]);
-    }
+    // Stop all system tasks
+    task_array_stop_all(&g_system_tasks);
 
-    // Poll for task completion or force cancel on second SIGINT
-    bool force_cancel = false;
-    for (size_t i = 0; i < num_task_arrays; i++) {
-        if (force_cancel) {
-            task_array_cancel_all(task_arrays[i]);
-            continue;
+    // Poll for task completion or force cancel on timeout/second SIGINT
+    int ret = task_array_poll_all(&g_system_tasks, sig_fd, TASK_SHUTDOWN_TIMEOUT_MS);
+    if (ret >= 0) {
+        LOGD(TAG, "all tasks finished and ready to be joined");
+    } else {
+        switch (ret) {
+            case -1:
+                LOGW(TAG, "shutdown timeout, cancelling tasks");
+                break;
+            case -2:
+                LOGW(TAG, "forced shutdown requested, cancelling tasks");
+                break;
+            case -3:
+                LOGE(TAG, "poll error during shutdown, cancelling tasks");
+                break;
+            default:
+                LOGE(TAG, "in default branch of poll - SHOULD NOT HAPPEN");
+                return EXIT_FAILURE;      
         }
+        task_array_cancel_all(&g_system_tasks);
+    }        
+    
+    // Join and destroy all system tasks
+    task_array_join_all(&g_system_tasks);
+    task_array_destroy_all(&g_system_tasks);
+    task_array_destroy(&g_system_tasks);
 
-        int ret = task_array_poll_all(task_arrays[i], sig_fd, TASK_SHUTDOWN_TIMEOUT_MS);
-        if (ret == -2) {
-            LOGW(TAG, "forced shutdown, cancelling all tasks");
-            force_cancel = true;
-            task_array_cancel_all(task_arrays[i]);
-        } else if (ret == -1) {
-            LOGW(TAG, "task array %zu timeout, cancelling", i);
-            task_array_cancel_all(task_arrays[i]);
-        }
-    }
-
-    // Join and destroy all tasks
-    for (size_t i = 0; i < num_task_arrays; i++) {
-        task_array_join_all(task_arrays[i]);
-        task_array_handles_destroy_all(task_arrays[i]);
-        task_array_destroy(task_arrays[i]);
-    }
-
+    LOGD(TAG, "stopping log task");
     // Stop log task last so it can drain remaining messages
     log_task_stop();
 
-    // Poll for log_task completion or force kill on second SIGINT
     struct pollfd log_wait_fds[2] = {
         { .fd = g_log_done_fd, .events = POLLIN },
         { .fd = sig_fd,        .events = POLLIN },
     };
 
-    int ret = poll(log_wait_fds, 2, 3000);
+    ret = poll(log_wait_fds, 2, LOG_TASK_SHUTDOWN_TIMEOUT_MS);
 
     if (ret < 0) {
-        perror("Failed to poll log file descriptor, SHOULD_NOT_HAPPEN: ");
-        return 0;
-    }
-
-    if (ret == 0) {
+        perror("poll failed on log done fd");
+    } else if (ret == 0) {
         fprintf(stderr, "log_task timeout, forcing shutdown\n");
         log_task_cancel();
     } else if (log_wait_fds[0].revents & POLLIN) {
@@ -157,8 +164,6 @@ int main(void) {
     } else if (log_wait_fds[1].revents & POLLIN) {
         fprintf(stderr, "Forced log shutdown\n");
         log_task_cancel();
-    } else {
-        fprintf(stderr, "ILLEGAL STATE, SHOULD NOT HAPPEN\n");
     }
 
     log_task_join();
