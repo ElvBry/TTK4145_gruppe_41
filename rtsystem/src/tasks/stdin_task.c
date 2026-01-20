@@ -21,12 +21,11 @@ typedef struct {
     size_t buf_size;
 } stdin_data_t;
 
-static int stdin_init(task_handle_t *self, void *init_arg);
-static void stdin_cleanup(task_handle_t *self);
+static int   stdin_init(task_handle_t *self, void *init_arg);
+static void  stdin_cleanup(task_handle_t *self);
 static void *stdin_entry(task_handle_t *self);
 
 const task_config_t stdin_task_config = {
-    .name       = "stdin_task",
     .priority   = DEFAULT_STDIN_TASK_PRIORITY,
     .entry      = stdin_entry,
     .on_init    = stdin_init,
@@ -177,7 +176,7 @@ static void *stdin_entry(task_handle_t *self) {
 
         dispatcher_add_to_queue(command);
     }
-
+    stdin_cleanup(self);
     LOGD(TAG, "exiting...");
     task_handle_mark_done(self);
     return NULL;

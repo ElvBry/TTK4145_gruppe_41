@@ -23,7 +23,6 @@ static void  dispatcher_cleanup(task_handle_t *self);
 static void *dispatcher_entry(task_handle_t *self);
 
 const task_config_t dispatcher_task_config = {
-    .name       = "disp_task",
     .priority   = DEFAULT_DISPATCHER_TASK_PRIORITY,
     .entry      = dispatcher_entry,
     .on_init    = dispatcher_init,
@@ -32,7 +31,6 @@ const task_config_t dispatcher_task_config = {
 };
 
 static int dispatcher_init(task_handle_t *self, void *init_arg) {
-    (void)self;
     size_t queue_size = *(size_t *)init_arg;
 
     if (g_command_queue_initialized) {
@@ -124,7 +122,7 @@ static void *dispatcher_entry(task_handle_t *self) {
         message = "";
         cmd_free(&command);
     }
-
+    dispatcher_cleanup(self);
     LOGD(TAG, "exiting...");
     task_handle_mark_done(self);
     return NULL;

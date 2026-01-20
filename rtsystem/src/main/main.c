@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <string.h>
 #include <unistd.h>
 #include <poll.h>
 #include <sys/signalfd.h>
@@ -12,6 +13,7 @@
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/tasks/stdin_task.h>
 #include <rtsystem/tasks/dispatcher_task.h>
+#include <rtsystem/tasks/example_worker_task.h>
 
 #define LOG_QUEUE_SIZE 64
 #define STDIN_LINE_BUF_SIZE 256
@@ -65,7 +67,7 @@ int main(void) {
     LOGD(TAG, "rtsystem started");
 
     // Initialize system tasks array
-    err = task_array_init(&g_system_tasks, 2);
+    err = task_array_init(&g_system_tasks, 3);
     if (err != 0) {
         LOGE(TAG, "failed to initialize system tasks array");
         log_task_stop();
@@ -79,13 +81,34 @@ int main(void) {
     size_t stdin_buf_size = STDIN_LINE_BUF_SIZE;
     size_t dispatch_queue_size = DISPATCH_QUEUE_SIZE;
 
-    if (task_create(&g_system_tasks, &stdin_task_config, &stdin_buf_size) == NULL) {
+    if (task_create(&g_system_tasks, &stdin_task_config, &stdin_buf_size, "stdin_task") == NULL) {
         LOGE(TAG, "failed to create stdin_task");
     }
 
-    if (task_create(&g_system_tasks, &dispatcher_task_config, &dispatch_queue_size) == NULL) {
+    if (task_create(&g_system_tasks, &dispatcher_task_config, &dispatch_queue_size, "disp_task") == NULL) {
         LOGE(TAG, "failed to create dispatcher_task");
     }
+    // Example task that helps understand functionality
+    char *temp = "I AM A SURGEON";
+    const size_t msg_len = strlen(temp) + 1;
+    
+    char *message = (char *) malloc(msg_len * sizeof(char));
+    if (message == NULL) {
+        LOGE(TAG, "could not allocate example message");
+        return EXIT_FAILURE;
+    }
+    strcpy(message, temp);
+    const worker_data_t worker_data = {
+        .time_to_live_ms = 3600,
+        .msg_send_period_ms = 800,
+        .msg_len = msg_len,
+        .message = message,
+    };
+
+    if (task_create(&g_system_tasks, &worker_task_config, (void *)&worker_data, "wrk_task0") == NULL) {
+        LOGE(TAG, "failed to create example_worker_task");
+    }
+    
 
     // Main loop - wait for signals
     struct pollfd pfd = {

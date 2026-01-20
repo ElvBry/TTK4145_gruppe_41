@@ -10,7 +10,7 @@
 
 static const char *TAG = "task_helper";
 
-task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void* init_arg) {
+task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void* init_arg, const char *name) {
     if (arr == NULL || config == NULL || config->entry == NULL) {
         LOGE(TAG, "task_create: invalid arguments");
         return NULL;
@@ -18,11 +18,12 @@ task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void*
 
     task_handle_t* handle = malloc(sizeof(task_handle_t));
     if (handle == NULL) {
-        LOGE(TAG, "task_create: malloc failed for task '%s'", config->name);
+        LOGE(TAG, "task_create: malloc failed for task '%s'", name);
         return NULL;
     }
 
     handle->config = config;
+    handle->name = name;
     handle->state = TASK_STATE_INIT;
     handle->task_resources = NULL;
     handle->array = NULL;
@@ -30,7 +31,7 @@ task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void*
 
     handle->done_fd = eventfd(0, EFD_NONBLOCK);
     if (handle->done_fd == -1) {
-        LOGE_ERRNO(TAG, "task_create: eventfd failed for task '%s'", config->name);
+        LOGE_ERRNO(TAG, "task_create: eventfd failed for task '%s'", handle->name);
         free(handle);
         return NULL;
     }
@@ -39,7 +40,7 @@ task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void*
     if (config->on_init != NULL) {
         int err = config->on_init(handle, init_arg);
         if (err != 0) {
-            LOGE(TAG, "task_create: on_init failed for task '%s'", config->name);
+            LOGE(TAG, "task_create: on_init failed for task '%s'", handle->name);
             close(handle->done_fd);
             free(handle);
             return NULL;
@@ -49,7 +50,7 @@ task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void*
     // Add to array
     int err = task_array_add(arr, handle);
     if (err != 0) {
-        LOGE(TAG, "task_create: failed to add task '%s' to array", config->name);
+        LOGE(TAG, "task_create: failed to add task '%s' to array", handle->name);
         if (config->on_cleanup != NULL) {
             config->on_cleanup(handle);
         }
@@ -75,7 +76,7 @@ task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void*
 
     if (err != 0) {
         LOGE(TAG, "task_create: pthread_create failed for task '%s': %s",
-             config->name, strerror(err));
+             handle->name, strerror(err));
         task_array_remove(arr, handle);
         if (config->on_cleanup != NULL) {
             config->on_cleanup(handle);
@@ -85,7 +86,7 @@ task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void*
         return NULL;
     }
 
-    LOGD(TAG, "created task '%s'", config->name);
+    LOGD(TAG, "created task '%s'", handle->name);
     return handle;
 }
 
@@ -93,19 +94,19 @@ void task_handle_mark_done(task_handle_t* handle) {
     handle->state = TASK_STATE_STOPPED;
     uint64_t done = 1;
     write(handle->done_fd, &done, sizeof(done));
-    LOGD(TAG, "task '%s' marked done", handle->config->name);
+    LOGD(TAG, "task '%s' marked done", handle->name);
 }
 
 void task_handle_destroy(task_handle_t* handle) {
     if (handle == NULL) return;
 
-    const char* name = handle->config ? handle->config->name : "unknown";
+    const char* name = handle->config ? handle->name : "unknown";
 
     // Remove from array if still registered
     if (handle->array != NULL) {
         int err = task_array_remove(handle->array, handle);
         if (err != 0) {
-            LOGW(TAG, "could not find handle of name: '%s' to remove", handle->config->name);
+            LOGW(TAG, "could not find handle of name: '%s' to remove", handle->name);
         }
     }
 
@@ -136,17 +137,17 @@ void task_stop(task_handle_t* handle) {
     } else {
         handle->state = TASK_STATE_STOPPING;
     }
-    LOGD(TAG, "stop signal sent to task '%s'", handle->config->name);
+    LOGD(TAG, "stop signal sent to task '%s'", handle->name);
 }
 
 void task_join(task_handle_t* handle) {
     pthread_join(handle->thread, NULL);
-    LOGD(TAG, "joined task '%s'", handle->config->name);
+    LOGD(TAG, "joined task '%s'", handle->name);
 }
 
 void task_cancel(task_handle_t* handle) {
     pthread_cancel(handle->thread);
-    LOGW(TAG, "cancelled task '%s'", handle->config->name);
+    LOGW(TAG, "cancelled task '%s'", handle->name);
 }
 
 
@@ -188,13 +189,13 @@ int task_array_add(task_array_t* arr, task_handle_t* handle) {
             arr->slots[i] = handle;
             handle->array = arr;
             pthread_mutex_unlock(&arr->lock);
-            LOGD(TAG, "added task '%s' to array at slot %zu", handle->config->name, i);
+            LOGD(TAG, "added task '%s' to array at slot %zu", handle->name, i);
             return 0;
         }
     }
 
     pthread_mutex_unlock(&arr->lock);
-    LOGE(TAG, "task array full, cannot add task '%s'", handle->config->name);
+    LOGE(TAG, "task array full, cannot add task '%s'", handle->name);
     return -1;
 }
 
@@ -206,13 +207,13 @@ int task_array_remove(task_array_t* arr, task_handle_t* handle) {
             arr->slots[i] = NULL;
             handle->array = NULL;
             pthread_mutex_unlock(&arr->lock);
-            LOGD(TAG, "removed task '%s' from array slot %zu", handle->config->name, i);
+            LOGD(TAG, "removed task '%s' from array slot %zu", handle->name, i);
             return 0;
         }
     }
 
     pthread_mutex_unlock(&arr->lock);
-    LOGW(TAG, "task '%s' not found in array", handle->config->name);
+    LOGW(TAG, "task '%s' not found in array", handle->name);
     return -1;
 }
 
@@ -349,7 +350,7 @@ void task_array_join_all(task_array_t* arr) {
                 task_join(handle);
                 joined++;
             } else {
-                LOGW(TAG, "task '%s' not finished, skipping join", handle->config->name);
+                LOGW(TAG, "task '%s' not finished, skipping join", handle->name);
                 skipped++;
             }
         }
@@ -397,7 +398,7 @@ int task_array_reap_finished(task_array_t* arr) {
             // Check if task has finished (done_fd readable)
             struct pollfd pfd = { .fd = handle->done_fd, .events = POLLIN };
             if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN)) {
-                LOGD(TAG, "reaping finished task '%s'", handle->config->name);
+                LOGD(TAG, "reaping finished task '%s'", handle->name);
 
                 // Clear array reference before destroy
                 handle->array = NULL;

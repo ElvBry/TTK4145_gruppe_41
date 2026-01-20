@@ -16,9 +16,8 @@ typedef struct task_array task_array_t;
 typedef struct task_config task_config_t;
 
 struct task_config {
-    const char* name;
     // Scheduler priority (0 = inherit, >0 = SCHED_FIFO)
-    int priority;
+    const int priority;
     void* (*entry)(task_handle_t* self);
     // Called by task_create after handle setup, before thread starts
     // Use to allocate resources into self->user_data
@@ -34,6 +33,7 @@ struct task_config {
 
 struct task_handle {
     const task_config_t* config;
+    const char* name;
     pthread_t thread;
     int done_fd;                  // eventfd signaled when task finishes
     volatile task_state_t state;
@@ -50,7 +50,7 @@ struct task_array {
 // Create a new task from config, add to array, and start the thread
 // Calls config->on_init(handle, init_arg) if on_init is set
 // Returns handle on success, NULL on failure
-task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void* init_arg);
+task_handle_t* task_create(task_array_t* arr, const task_config_t* config, void* init_arg, const char *name);
 
 // Mark task as done and signal done_fd
 // Call this at the end of your entry function before returning
