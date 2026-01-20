@@ -18,6 +18,7 @@
 #define DISPATCH_QUEUE_SIZE 8
 
 // Set priority of task (should not exceed 50)
+#define PRIORITY_MAIN 50 // Should be highest in order to catch sigint and cleanly shut down all other tasks
 #define PRIORITY_DISPATCH_TASK 40
 #define PRIORITY_STDIN_TASK 12
 #define PRIORITY_LOG_TASK   10
@@ -41,6 +42,12 @@ static task_array_t* task_arrays[] = {
 static const size_t num_task_arrays = sizeof(task_arrays) / sizeof(task_arrays[0]);
 
 int main(void) {
+    struct sched_param param;
+    param.sched_priority = PRIORITY_MAIN;
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
+        perror("Failed to set main thread priority (try running with sudo)");
+        return EXIT_FAILURE;
+    }
     // Block SIGINT and use signalfd instead
     sigset_t mask;
     sigemptyset(&mask);
