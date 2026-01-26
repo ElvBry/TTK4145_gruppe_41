@@ -5,8 +5,7 @@
 #include <stddef.h>
 
 typedef enum {
-    UDP,
-    TCP,
+    SOCKET,
     ECHO,
     HELP,
     NIL,

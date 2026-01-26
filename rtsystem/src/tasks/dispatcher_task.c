@@ -96,18 +96,15 @@ static void *dispatcher_entry(task_handle_t *self) {
         }
 
         switch (command.cmd_type) {
-            case UDP:
-                parse_UDP(command);
-                break;
-            case TCP:
-                parse_TCP(command);
+            case SOCKET:
+                parse_socket(command);
                 break;
             case ECHO:
-                parse_ECHO(command, &message);
+                parse_echo(command, &message);
                 LOGI(TAG, "%s", message);
                 break;
             case HELP:
-                parse_HELP(command, &message);
+                parse_help(command, &message);
                 LOGI(TAG, "%s", message);
                 break;
             case NIL:

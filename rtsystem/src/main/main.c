@@ -25,6 +25,8 @@
 #define TASK_SHUTDOWN_TIMEOUT_MS 1000
 #define LOG_TASK_SHUTDOWN_TIMEOUT_MS 3000
 
+#define SYSTEM_TASKS_ARRAY_CAPACITY 3
+
 static const char *TAG = "main";
 
 // Shared global flag for graceful shutdown
@@ -67,7 +69,7 @@ int main(void) {
     LOGD(TAG, "rtsystem started");
 
     // Initialize system tasks array
-    err = task_array_init(&g_system_tasks, 3);
+    err = task_array_init(&g_system_tasks, SYSTEM_TASKS_ARRAY_CAPACITY);
     if (err != 0) {
         LOGE(TAG, "failed to initialize system tasks array");
         log_task_stop();

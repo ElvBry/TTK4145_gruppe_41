@@ -13,13 +13,11 @@ int tokenize(char *input, char **argv);
 // returns 0 on success, -1 on error
 int set_cmd_type(cmd_t *result);
 
-int parse_UDP(cmd_t command);
+int parse_socket(cmd_t command);
 
-int parse_TCP(cmd_t command);
+int parse_echo(cmd_t command, char **message);
 
-int parse_ECHO(cmd_t command, char **message);
-
-int parse_HELP(cmd_t command, char **message);
+int parse_help(cmd_t command, char **message);
 
 int parse_NIL(cmd_t command);
 
