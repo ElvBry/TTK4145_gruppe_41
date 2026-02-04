@@ -12,6 +12,7 @@ compile_commands.json
 # Compiled binaries and libraries
 Exercise1/3 - shared variable/c/foo
 Exercise1/5 - bounded buffer/c/main
+Exercise4/processPair
 *.exe
 *.out
 *.o
