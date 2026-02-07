@@ -1,14 +1,20 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
 #include <rtsystem/core/task_helper.h>
 #include <rtsystem/tasks/example_worker_task.h>
-#include <rtsystem/async_log_helper.h>
 
-#define EXAMPLE_WORKER_POLL_TIMEOUT_MS 10
+#define LOG_LEVEL LOG_LEVEL_DEBUG
+#ifdef ASYNC_LOG
+    #include <rtsystem/async_log_helper.h>
+#else
+    #include <rtsystem/log_helper.h>
+#endif
+
 
 const static char *TAG = "worker_task";
+
+#define EXAMPLE_WORKER_POLL_TIMEOUT_MS 10
 
 extern volatile int g_running;
 

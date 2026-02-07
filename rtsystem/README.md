@@ -10,20 +10,16 @@ rtsystem
 │   └── rtsystem
 │       ├── async_log_helper.h
 │       ├── core
-│       │   ├── cmd_parser.h
 │       │   ├── fifo_queue.h
 │       │   └── task_helper.h
 │       ├── log_helper.h
 │       └── tasks
-│           ├── dispatcher_task.h
 │           ├── example_worker_task.h
-│           ├── log_task.h
-│           └── stdin_task.h
+│           └── log_task.h
 ├── README.md
 └── src
     ├── core
     │   ├── CMakeLists.txt
-    │   ├── cmd_parser.c
     │   ├── fifo_queue.c
     │   └── task_helper.c
     ├── main
@@ -31,12 +27,10 @@ rtsystem
     │   └── main.c
     └── tasks
         ├── CMakeLists.txt
-        ├── dispatcher_task.c
         ├── example_worker_task.c
-        ├── log_task.c
-        └── stdin_task.c
+        └── log_task.c
 
-9 directories, 22 files
+9 directories, 16 files
 ```
 
 - `include/rtsystem/`       — shared headers
@@ -50,7 +44,7 @@ rtsystem
 ## How to build, compile and run project
 Set up CMake and with build directory:
 ```bash
-cmake -B build
+cmake -B build # optionally add '-DASYNC_LOG=ON' or '-DASYNC_LOG=OFF' to configure logging
 ```
 
 Compile using the generated Makefile:

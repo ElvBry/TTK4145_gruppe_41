@@ -13,7 +13,10 @@
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/async_log_helper.h>
 
-#define LOG_POLL_TIMEOUT_MS 10
+
+static const char *TAG = "log_task";
+
+#define LOG_POLL_TIMEOUT_MS 5000
 #define LOG_TIME_RESOLUTION_NS 1000
 #define LOG_TAG_MIN_WIDTH 12
 
@@ -65,13 +68,14 @@ static const char* get_tag_color(const char* tag) {
     return tag_colors[hash % (sizeof(tag_colors) / sizeof(tag_colors[0]))];
 }
 
-static const char *TAG = "log_task";
-
 // Global log queue (declared in async_log_helper.h)
 fifo_queue_t g_log_queue;
 
-// Log task runs until this is set to 0 (after all other tasks have stopped)
+// Log task status flag (used by ALOG macro guard)
 volatile int g_log_running = 1;
+
+// Event fd signaled to request log_task shutdown
+int g_log_shutdown_fd = -1;
 
 // Event fd signaled when log_task exits
 int g_log_done_fd = -1;
@@ -103,25 +107,31 @@ static void* log_task(void* arg) {
 
     LOGD(TAG, "successfully initialized. Logging queue...");
 
-    struct pollfd pfd = {
-        .fd = g_log_queue.event_fd,
-        .events = POLLIN
+    struct pollfd pfds[2] = {
+        { .fd = g_log_queue.event_fd,  .events = POLLIN },
+        { .fd = g_log_shutdown_fd,     .events = POLLIN },
     };
 
-    while (g_log_running) {
-        int err = poll(&pfd, 1, LOG_POLL_TIMEOUT_MS);
+    for (;;) {
+        int err = poll(pfds, 2, LOG_POLL_TIMEOUT_MS);
+        
+        if (err == 0) {
+            // normal, timeout for optional heartbeat functionality
+            continue;
+        }
+
         if (err == -1) {
             fprintf(stderr, "%s : could not poll log queue: %s", TAG, strerror(errno));
             errno = 0;
             continue;
         }
 
-        if (err == 0) {
-            // Timeout, normal
-            continue;
+        // Shutdown requested
+        if (pfds[1].revents & POLLIN) {
+            break;
         }
 
-        if (pfd.revents & POLLIN) {
+        if (pfds[0].revents & POLLIN) {
             err = fifo_queue_receive(&g_log_queue, &msg);
             if (err != 0) {
                 LOGW(TAG, "should not happen, check cause");
@@ -153,9 +163,17 @@ int log_task_init(const size_t queue_size, const int priority) {
         return -1;
     }
 
+    g_log_shutdown_fd = eventfd(0, 0);
+    if (g_log_shutdown_fd == -1) {
+        perror("log_task_init: eventfd (shutdown)");
+        fifo_queue_destroy(&g_log_queue);
+        return -1;
+    }
+
     g_log_done_fd = eventfd(0, 0);
     if (g_log_done_fd == -1) {
-        perror("log_task_init: eventfd");
+        perror("log_task_init: eventfd (done)");
+        close(g_log_shutdown_fd);
         fifo_queue_destroy(&g_log_queue);
         return -1;
     }
@@ -176,6 +194,7 @@ int log_task_init(const size_t queue_size, const int priority) {
     if (err != 0) {
         fprintf(stderr, "log_task_init: pthread_create: %s\n", strerror(err));
         close(g_log_done_fd);
+        close(g_log_shutdown_fd);
         fifo_queue_destroy(&g_log_queue);
         return -1;
     }
@@ -193,6 +212,10 @@ void log_task_cancel(void) {
 
 void log_task_cleanup(void) {
     fifo_queue_destroy(&g_log_queue);
+    if (g_log_shutdown_fd != -1) {
+        close(g_log_shutdown_fd);
+        g_log_shutdown_fd = -1;
+    }
     if (g_log_done_fd != -1) {
         close(g_log_done_fd);
         g_log_done_fd = -1;

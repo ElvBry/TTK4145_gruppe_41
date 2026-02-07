@@ -4,9 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
 #include <rtsystem/core/task_helper.h>
-#include <rtsystem/async_log_helper.h>
+
+#define LOG_LEVEL LOG_LEVEL_DEBUG
+#ifdef ASYNC_LOG
+    #include <rtsystem/async_log_helper.h>
+#else
+    #include <rtsystem/log_helper.h>
+#endif
+
 
 static const char *TAG = "task_helper";
 

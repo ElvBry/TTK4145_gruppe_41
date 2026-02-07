@@ -1,9 +1,12 @@
-add_library(tasks STATIC
-    log_task.c
-    stdin_task.c
-    dispatcher_task.c
+set(TASK_SOURCES
     example_worker_task.c
 )
+
+if(ASYNC_LOG)
+    list(APPEND TASK_SOURCES log_task.c)
+endif()
+
+add_library(tasks STATIC ${TASK_SOURCES})
 
 target_include_directories(tasks PUBLIC
     ${PROJECT_SOURCE_DIR}/include

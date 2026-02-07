@@ -4,6 +4,7 @@ out/
 cmake-build-*/
 
 # CMake generated
+CMakeFiles/
 compile_commands.json
 *CMakeCache.txt
 # Clangd cache

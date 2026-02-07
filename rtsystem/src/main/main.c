@@ -7,34 +7,37 @@
 #include <poll.h>
 #include <sys/signalfd.h>
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
-#include <rtsystem/async_log_helper.h>
 #include <rtsystem/core/task_helper.h>
-#include <rtsystem/tasks/log_task.h>
-#include <rtsystem/tasks/stdin_task.h>
-#include <rtsystem/tasks/dispatcher_task.h>
 #include <rtsystem/tasks/example_worker_task.h>
 
-#define LOG_QUEUE_SIZE 64
-#define STDIN_LINE_BUF_SIZE 256
-#define DISPATCH_QUEUE_SIZE 8
+#define LOG_LEVEL LOG_LEVEL_DEBUG
+#ifdef ASYNC_LOG
+    #include <rtsystem/async_log_helper.h>
+    #include <rtsystem/tasks/log_task.h>
+#else
+    #include <rtsystem/log_helper.h>
+#endif
 
-#define PRIORITY_MAIN 50
-#define PRIORITY_LOG_TASK 10
+#ifdef ASYNC_LOG
+    #define LOG_QUEUE_SIZE 64
+    #define PRIORITY_LOG_TASK 10
+    #define LOG_TASK_SHUTDOWN_TIMEOUT_MS 3000
+#endif
 
-#define TASK_SHUTDOWN_TIMEOUT_MS 1000
-#define LOG_TASK_SHUTDOWN_TIMEOUT_MS 3000
-
-#define SYSTEM_TASKS_ARRAY_CAPACITY 3
 
 static const char *TAG = "main";
+
+#define PRIORITY_MAIN 50
+#define TASK_SHUTDOWN_TIMEOUT_MS 1000
+
+#define SYSTEM_TASKS_ARRAY_CAPACITY 3
 
 // Shared global flag for graceful shutdown
 volatile sig_atomic_t g_running = 1;
 
 static int sig_fd = -1;
 
-// System tasks array for stdin and dispatcher
+// Queue containing all tasks, needed for graceful shutdown
 static task_array_t g_system_tasks;
 
 int main(void) {
@@ -58,13 +61,15 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    // Initialize log task first (special case - not in task_array)
-    err = log_task_init(LOG_QUEUE_SIZE, PRIORITY_LOG_TASK); 
-    if (err != 0) {
-        fprintf(stderr, "Failed to initialize log task\n");
-        close(sig_fd);
-        return EXIT_FAILURE;
-    }
+    #ifdef ASYNC_LOG
+        // Initialize log task first (special case - not in task_array)
+        err = log_task_init(LOG_QUEUE_SIZE, PRIORITY_LOG_TASK);
+        if (err != 0) {
+            fprintf(stderr, "Failed to initialize log task\n");
+            close(sig_fd);
+            return EXIT_FAILURE;
+        }
+    #endif
 
     LOGD(TAG, "rtsystem started");
 
@@ -72,24 +77,15 @@ int main(void) {
     err = task_array_init(&g_system_tasks, SYSTEM_TASKS_ARRAY_CAPACITY);
     if (err != 0) {
         LOGE(TAG, "failed to initialize system tasks array");
-        log_task_stop();
-        log_task_join();
-        log_task_cleanup();
+        #ifdef ASYNC_LOG
+            log_task_stop();
+            log_task_join();
+            log_task_cleanup();
+        #endif
         close(sig_fd);
         return EXIT_FAILURE;
     }
 
-    // Create system tasks
-    size_t stdin_buf_size = STDIN_LINE_BUF_SIZE;
-    size_t dispatch_queue_size = DISPATCH_QUEUE_SIZE;
-
-    if (task_create(&g_system_tasks, &stdin_task_config, &stdin_buf_size, "stdin_task") == NULL) {
-        LOGE(TAG, "failed to create stdin_task");
-    }
-
-    if (task_create(&g_system_tasks, &dispatcher_task_config, &dispatch_queue_size, "disp_task") == NULL) {
-        LOGE(TAG, "failed to create dispatcher_task");
-    }
     // Example task that helps understand functionality
     char *temp = "I AM A SURGEON";
     const size_t msg_len = strlen(temp) + 1;
@@ -119,7 +115,7 @@ int main(void) {
     };
 
     while (g_running) {
-        // Waits for sig_fd to be set, happens on 
+        // Waits for sig_fd to be set to SIGINT by user ('Ctrl + c' in terminal)
         int ret = poll(&pfd, 1, -1);
 
         if (ret < 0) {
@@ -168,32 +164,34 @@ int main(void) {
     task_array_destroy_all(&g_system_tasks);
     task_array_destroy(&g_system_tasks);
 
-    LOGD(TAG, "stopping log task");
-    // Stop log task last so it can drain remaining messages
-    log_task_stop();
+    #ifdef ASYNC_LOG
+        LOGD(TAG, "stopping log task");
+        // Stop log task last so it can drain remaining messages
+        log_task_stop();
 
-    struct pollfd log_wait_fds[2] = {
-        { .fd = g_log_done_fd, .events = POLLIN },
-        { .fd = sig_fd,        .events = POLLIN },
-    };
+        struct pollfd log_wait_fds[2] = {
+            { .fd = g_log_done_fd, .events = POLLIN },
+            { .fd = sig_fd,        .events = POLLIN },
+        };
 
-    ret = poll(log_wait_fds, 2, LOG_TASK_SHUTDOWN_TIMEOUT_MS);
+        ret = poll(log_wait_fds, 2, LOG_TASK_SHUTDOWN_TIMEOUT_MS);
 
-    if (ret < 0) {
-        perror("poll failed on log done fd");
-    } else if (ret == 0) {
-        fprintf(stderr, "log_task timeout, forcing shutdown\n");
-        log_task_cancel();
-    } else if (log_wait_fds[0].revents & POLLIN) {
-        // log_task finished gracefully
-    } else if (log_wait_fds[1].revents & POLLIN) {
-        fprintf(stderr, "Forced log shutdown\n");
-        log_task_cancel();
-    }
+        if (ret < 0) {
+            perror("poll failed on log done fd");
+        } else if (ret == 0) {
+            fprintf(stderr, "log_task timeout, forcing shutdown\n");
+            log_task_cancel();
+        } else if (log_wait_fds[0].revents & POLLIN) {
+            // log_task finished gracefully
+        } else if (log_wait_fds[1].revents & POLLIN) {
+            fprintf(stderr, "Forced log shutdown\n");
+            log_task_cancel();
+        }
 
-    log_task_join();
-    log_task_cleanup();
+        log_task_join();
+        log_task_cleanup();
+    #endif
+
     close(sig_fd);
-
     return EXIT_SUCCESS;
 }

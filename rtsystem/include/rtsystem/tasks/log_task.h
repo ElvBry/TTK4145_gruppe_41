@@ -3,6 +3,8 @@
 
 #include <signal.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <unistd.h>
 
 // Colors for log levels
 #define COLOR_CYAN   "\033[36m"
@@ -49,9 +51,11 @@
 extern volatile sig_atomic_t g_running;
 extern volatile sig_atomic_t g_sigint_count;
 
-// Log task shutdown flag (defined in log_task.c)
-// Set to 0 after all other tasks have stopped to allow final log drain
+// Log task status flag (used by ALOG macro to warn about logging after shutdown)
 extern volatile int g_log_running;
+
+// Event fd signaled to request log_task shutdown (for poll-based wakeup)
+extern int g_log_shutdown_fd;
 
 // Event fd signaled when log_task exits (for poll-based waiting)
 extern int g_log_done_fd;
@@ -62,9 +66,11 @@ extern int g_log_done_fd;
 // Returns 0 on success, -1 on error
 int log_task_init(const size_t queue_size, const int priority);
 
-// Signal log task to stop
+// Signal log task to stop (wakes poll immediately)
 static inline void log_task_stop(void) {
     g_log_running = 0;
+    const uint64_t val = 1;
+    write(g_log_shutdown_fd, &val, sizeof(val));
 }
 
 // Wait for log task thread to finish
