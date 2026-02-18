@@ -44,6 +44,7 @@ extern volatile int g_log_running;
         if (_level >= LOG_LEVEL) { \
             if (!g_log_running) { \
                 fprintf(stderr, "WARN: attempting to log while log_task not running [%s]\n", _tag); \
+                break; \
             } \
             log_message_t _msg; \
             _msg.level = _level; \
