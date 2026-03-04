@@ -57,9 +57,11 @@ static void example_worker_cleanup(task_handle_t *self) {
     if (self == NULL) return;
     worker_data_t *data = self->task_resources;
     if (data != NULL) {
-        free(data->message);
+        if (data->message != NULL) {
+            free(data->message);
+            LOGD(TAG, "%s : freed message", self->name);
+        }
         free(data);
-        LOGD(TAG, "%s : freed message", self->name);
     }
 }
 

@@ -16,6 +16,7 @@ Semaphore:
         notify()    (same as "signal")
     (Note that there is no `getValue()` function!)
 */
+
 class Resource(T) {
     private {
         T               value;
@@ -33,11 +34,30 @@ class Resource(T) {
     }
     
     T allocate(int priority){
+        mtx.wait();
+        if(busy){
+            numWaiting[priority]++;
+            mtx.notify();
+            sems[priority].wait();
+        }
+        busy = true;
+        mtx.notify();
         return value;
     }
     
     void deallocate(T v){
         value = v;
+        mtx.wait();
+        busy = false;
+        if(numWaiting[1]) {
+            numWaiting[1]--;
+            sems[1].notify();
+        } else if (numWaiting[0]) {
+            numWaiting[0]--;
+            sems[0].notify();
+        } else {
+            mtx.notify();
+        }
     }
 }
 
