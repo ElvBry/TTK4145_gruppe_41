@@ -1,5 +1,5 @@
 set(TASK_SOURCES
-    example_worker_task.c
+    example_worker_task.c elevator_control_task.c backup_task.c
 )
 
 if(ASYNC_LOG)

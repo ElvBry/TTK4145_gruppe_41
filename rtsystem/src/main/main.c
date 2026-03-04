@@ -14,14 +14,11 @@
 #ifdef ASYNC_LOG
     #include <rtsystem/async_log_helper.h>
     #include <rtsystem/tasks/log_task.h>
-#else
-    #include <rtsystem/log_helper.h>
-#endif
-
-#ifdef ASYNC_LOG
     #define LOG_QUEUE_SIZE 64
     #define PRIORITY_LOG_TASK 10
     #define LOG_TASK_SHUTDOWN_TIMEOUT_MS 3000
+#else
+    #include <rtsystem/log_helper.h>
 #endif
 
 
@@ -37,8 +34,8 @@ volatile sig_atomic_t g_running = 1;
 
 static int sig_fd = -1;
 
-// Queue containing all tasks, needed for graceful shutdown
-static task_array_t g_system_tasks;
+// Queue containing all system tasks, needed for graceful shutdown
+static task_array_t system_tasks;
 
 int main(void) {
     // Set main thread priority
@@ -74,7 +71,7 @@ int main(void) {
     LOGD(TAG, "rtsystem started");
 
     // Initialize system tasks array
-    err = task_array_init(&g_system_tasks, SYSTEM_TASKS_ARRAY_CAPACITY);
+    err = task_array_init(&system_tasks, SYSTEM_TASKS_ARRAY_CAPACITY);
     if (err != 0) {
         LOGE(TAG, "failed to initialize system tasks array");
         #ifdef ASYNC_LOG
@@ -85,7 +82,12 @@ int main(void) {
         close(sig_fd);
         return EXIT_FAILURE;
     }
+    // Start process_pair backup if it does not exist
 
+    // Wait for process_pair backup to be finished if it was made
+
+
+    // Create tasks needed for program
     // Example task that helps understand functionality
     char *temp = "I AM A SURGEON";
     const size_t msg_len = strlen(temp) + 1;
@@ -103,7 +105,7 @@ int main(void) {
         .message = message,
     };
 
-    if (task_create(&g_system_tasks, &worker_task_config, (void *)&worker_data, "wrk_task0") == NULL) {
+    if (task_create(&system_tasks, &worker_task_config, (void *)&worker_data, "wrk_task0") == NULL) {
         LOGE(TAG, "failed to create example_worker_task");
     }
     
@@ -135,10 +137,10 @@ int main(void) {
     LOGD(TAG, "received SIGINT, shutting down...");
 
     // Stop all system tasks
-    task_array_stop_all(&g_system_tasks);
+    task_array_stop_all(&system_tasks);
 
     // Poll for task completion or force cancel on timeout/second SIGINT
-    int ret = task_array_poll_all(&g_system_tasks, sig_fd, TASK_SHUTDOWN_TIMEOUT_MS);
+    int ret = task_array_poll_all(&system_tasks, sig_fd, TASK_SHUTDOWN_TIMEOUT_MS);
     if (ret >= 0) {
         LOGD(TAG, "all tasks finished and ready to be joined");
     } else {
@@ -156,13 +158,13 @@ int main(void) {
                 LOGE(TAG, "in default branch of poll - SHOULD NOT HAPPEN");
                 return EXIT_FAILURE;      
         }
-        task_array_cancel_all(&g_system_tasks);
+        task_array_cancel_all(&system_tasks);
     }        
     
     // Join and destroy all system tasks
-    task_array_join_all(&g_system_tasks);
-    task_array_destroy_all(&g_system_tasks);
-    task_array_destroy(&g_system_tasks);
+    task_array_join_all(&system_tasks);
+    task_array_destroy_all(&system_tasks);
+    task_array_destroy(&system_tasks);
 
     #ifdef ASYNC_LOG
         LOGD(TAG, "stopping log task");
