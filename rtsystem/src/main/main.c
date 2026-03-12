@@ -8,7 +8,8 @@
 #include <sys/signalfd.h>
 
 #include <rtsystem/core/task_helper.h>
-#include <rtsystem/tasks/example_worker_task.h>
+#include "rtsystem/tasks/process_pair_backup_task.h"
+#include "rtsystem/tasks/process_pair_primary_task.h"
 
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #ifdef ASYNC_LOG
@@ -42,7 +43,7 @@ int main(void) {
     struct sched_param param = { .sched_priority = PRIORITY_MAIN };
     int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
     if (err != 0) {
-        perror("Failed to set main thread priority (try running with sudo)");
+        perror("failed to set main thread priority (try running with sudo)");
         return EXIT_FAILURE;
     }
 
@@ -62,7 +63,7 @@ int main(void) {
         // Initialize log task first (special case - not in task_array)
         err = log_task_init(LOG_QUEUE_SIZE, PRIORITY_LOG_TASK);
         if (err != 0) {
-            fprintf(stderr, "Failed to initialize log task\n");
+            fprintf(stderr, "failed to initialize log task\n");
             close(sig_fd);
             return EXIT_FAILURE;
         }
@@ -82,9 +83,17 @@ int main(void) {
         close(sig_fd);
         return EXIT_FAILURE;
     }
-    // Start process_pair backup if it does not exist
 
-    // Wait for process_pair backup to be finished if it was made
+    // Try to start process as primary
+    task_handle_t *handle = task_create(&system_tasks, &primary_task_config, NULL, "primary");
+    if (handle == NULL) {
+        // primary_init returned -1, primary process already exist
+        handle = task_create(&system_tasks, &backup_task_config, NULL, "backup");
+        if (handle == NULL) {
+            LOGE(TAG, "failed to initialize backup task");
+            return EXIT_FAILURE;
+        }
+    }
 
     // Main loop - wait for signals
     struct pollfd pfd = {

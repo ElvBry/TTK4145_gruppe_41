@@ -5,7 +5,16 @@
 #include <stdio.h>
 #include <pthread.h>
 
-#include "elevator_hardware.h"
+#include "rtsystem/core/elevator_hardware.h"
+
+#define LOG_LEVEL LOG_LEVEL_DEBUG
+#ifdef ASYNC_LOG
+    #include <rtsystem/async_log_helper.h>
+#else
+    #include <rtsystem/log_helper.h>
+#endif
+
+const static char *TAG = "elevator_hardware";
 
 static int sockfd;
 static pthread_mutex_t sockmtx;
@@ -25,11 +34,22 @@ void elevator_hardware_init() {
         .ai_protocol    = IPPROTO_TCP,
     };
     struct addrinfo* res;
-    getaddrinfo(ip, port, &hints, &res);
-    
-    int fail = connect(sockfd, res->ai_addr, res->ai_addrlen);
-    assert(fail == 0 && "Unable to connect to simulator server");
-    
+    errno = 0;
+    int err = getaddrinfo(ip, port, &hints, &res);
+    if (err != 0) {
+        if (err == EAI_SOCKTYPE) {
+            LOGE_ERRNO(TAG, "system error: ");
+            exit(EXIT_FAILURE);
+        }
+        LOGE(TAG, "could not get addrinfo with error: %s",gai_strerror(err));
+        exit(EXIT_FAILURE);
+    }
+    errno = 0;
+    err = connect(sockfd, res->ai_addr, res->ai_addrlen);
+    if (err != 0) {
+        LOGE_ERRNO(TAG, "count not connect socket with error: ");
+        exit(EXIT_FAILURE);
+    }    
     freeaddrinfo(res);
     
     send(sockfd, (char[4]) {0}, 4, 0);

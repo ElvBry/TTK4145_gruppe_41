@@ -3,7 +3,6 @@
 
 #include <rtsystem/core/task_helper.h>
 #include <rtsystem/tasks/process_pair_primary_task.h>
-#include <rtsystem/tasks/example_worker_task.h>
 
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #ifdef ASYNC_LOG
@@ -36,33 +35,15 @@ const task_config_t primary_task_config = {
 
 // Currently no use for init arg
 static int process_pair_primary_init(task_handle_t *self, void *init_arg) {
+    // Check if primary socket already exists, if it does return -1
+
     int err = task_array_init(&application_tasks, APPLICATION_TASKS_ARRAY_CAPACITY);
     if (err != 0) {
         LOGE(TAG, "failed to initialize system tasks array");
         return -1;
     }
     // Create tasks needed for program
-    // Example task that helps understand functionality
-    char *temp = "I AM A SURGEON";
-    const size_t msg_len = strlen(temp) + 1;
     
-    char *message = (char *) malloc(msg_len * sizeof(char));
-    if (message == NULL) {
-        LOGE(TAG, "could not allocate example message");
-        return -1;
-    }
-    strcpy(message, temp);
-    const worker_data_t worker_data = {
-        .time_to_live_ms = 3600,
-        .msg_send_period_ms = 800,
-        .msg_len = msg_len,
-        .message = message,
-    };
-
-    if (task_create(&application_tasks, &worker_task_config, (void *)&worker_data, "wrk_task0") == NULL) {
-        LOGE(TAG, "failed to create example_worker_task");
-        return -1;
-    }
     return 0;
 }
 
