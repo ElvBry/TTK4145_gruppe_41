@@ -25,7 +25,7 @@
 static const char *TAG = "main";
 
 #define PRIORITY_MAIN 50
-#define TASK_SHUTDOWN_TIMEOUT_MS 1000
+#define SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS 3000
 
 #define SYSTEM_TASKS_ARRAY_CAPACITY 3
 
@@ -86,30 +86,6 @@ int main(void) {
 
     // Wait for process_pair backup to be finished if it was made
 
-
-    // Create tasks needed for program
-    // Example task that helps understand functionality
-    char *temp = "I AM A SURGEON";
-    const size_t msg_len = strlen(temp) + 1;
-    
-    char *message = (char *) malloc(msg_len * sizeof(char));
-    if (message == NULL) {
-        LOGE(TAG, "could not allocate example message");
-        return EXIT_FAILURE;
-    }
-    strcpy(message, temp);
-    const worker_data_t worker_data = {
-        .time_to_live_ms = 3600,
-        .msg_send_period_ms = 800,
-        .msg_len = msg_len,
-        .message = message,
-    };
-
-    if (task_create(&system_tasks, &worker_task_config, (void *)&worker_data, "wrk_task0") == NULL) {
-        LOGE(TAG, "failed to create example_worker_task");
-    }
-    
-
     // Main loop - wait for signals
     struct pollfd pfd = {
         .fd = sig_fd,
@@ -140,7 +116,7 @@ int main(void) {
     task_array_stop_all(&system_tasks);
 
     // Poll for task completion or force cancel on timeout/second SIGINT
-    int ret = task_array_poll_all(&system_tasks, sig_fd, TASK_SHUTDOWN_TIMEOUT_MS);
+    int ret = task_array_poll_all(&system_tasks, sig_fd, SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS);
     if (ret >= 0) {
         LOGD(TAG, "all tasks finished and ready to be joined");
     } else {
