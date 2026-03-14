@@ -26,9 +26,6 @@
 #define ELEVATOR_HARDWARE_PORT "15657"
 #define PROCESS_PAIR_PORT       8081 
 
-// Command used to spawn terminals for process pairs, gnome-terminal does not work with WSL
-#define SPAWN_CMD "gnome-terminal -- sudo ./build/src/main/rtsystem &"
-
 // Elevator layout (we currently only use 4 and 3, might treat changes later)
 #define N_FLOORS   4
 #define N_BUTTONS  3

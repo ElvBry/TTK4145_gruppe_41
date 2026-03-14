@@ -1,7 +1,9 @@
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/eventfd.h>
 
 
 #include <rtsystem/tasks/process_pair_backup_task.h>
@@ -21,12 +23,17 @@
 const static char *TAG = "backup_task";
 
 extern volatile int g_running;
+extern int g_promote_fd;
 
 static int backup_listen_fd = -1;
 static int backup_conn_fd   = -1;
 
-// TODO: change comitted variable to be reading from and to a file instead
+// TODO: change committed variable to be reading from and to a file instead
 static process_pair_message_t committed;
+
+process_pair_message_t process_pair_backup_get_last_committed(void) {
+    return committed;
+}
 
 static int   process_pair_backup_init(task_handle_t *self, void *init_arg);
 static void  process_pair_backup_cleanup(task_handle_t *self);
@@ -94,10 +101,10 @@ static void *process_pair_backup_entry(task_handle_t *self){
     backup_listen_fd = -1;
 
     if (backup_conn_fd < 0) {
-        LOGI(TAG, "no primary appeared. Promoting...");
-        // TODO: trigger primary promotion
+        LOGI(TAG, "no primary appeared, promoting...");
         process_pair_backup_cleanup(self);
         task_handle_mark_done(self);
+        eventfd_write(g_promote_fd, 1);
         return NULL;
     }
 
@@ -110,24 +117,34 @@ static void *process_pair_backup_entry(task_handle_t *self){
         process_pair_message_t message;
         int received_bytes = recv(backup_conn_fd, (void *)&message, sizeof(message), MSG_WAITALL);
         if (received_bytes != sizeof(process_pair_message_t)) {
-            LOGE(TAG, "primary lost. Promoting...");
+            LOGE(TAG, "primary lost, promoting...");
             break;
         }
 
         if (message.crc32 != process_pair_message_checksum(&message)) {
-            LOGW(TAG, "checksum failed on received message. Dropping...");
+            LOGW(TAG, "checksum failed on received message, dropping...");
             send(backup_conn_fd, &committed, sizeof(committed), 0);
             continue;
         }
-        committed = message;
 
+        if (message.type == PP_MSG_SHUTDOWN) {
+            LOGD(TAG, "following order from primary, killing myself...");
+            process_pair_backup_cleanup(self);
+            task_handle_mark_done(self);
+            // SIGINT is blocked in main() and routed to sig_fd via signalfd,
+            // so this wakes up main's poll loop and triggers normal shutdown
+            kill(getpid(), SIGINT);
+            return NULL;
+        }
+
+        committed = message;
         // TODO: write committed message to file with nplex and saferead and so on.
         send(backup_conn_fd, &committed, sizeof(committed), 0);
     }
 
-    // TODO: find out best way to become primary (another fd for main to poll perhaps?)
     process_pair_backup_cleanup(self);
     task_handle_mark_done(self);
+    eventfd_write(g_promote_fd, 1);
     return NULL;
 }
 

@@ -6,11 +6,13 @@
 #include <unistd.h>
 #include <poll.h>
 #include <sys/signalfd.h>
+#include <sys/eventfd.h>
 
 #include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
 #include "rtsystem/tasks/process_pair_backup_task.h"
 #include "rtsystem/tasks/process_pair_primary_task.h"
+#include <rtsystem/messages.h>
 
 #define LOG_LEVEL LOG_LEVEL_MAIN
 #ifdef ASYNC_LOG
@@ -25,6 +27,9 @@ static const char *TAG = "main";
 
 // Shared global flag for graceful shutdown
 volatile sig_atomic_t g_running = 1;
+
+// Written to by the backup task to signal main that it should promote to primary
+int g_promote_fd = -1;
 
 static int sig_fd = -1;
 
@@ -49,6 +54,13 @@ int main(void) {
     sig_fd = signalfd(-1, &mask, 0);
     if (sig_fd == -1) {
         perror("signalfd");
+        return EXIT_FAILURE;
+    }
+
+    g_promote_fd = eventfd(0, 0);
+    if (g_promote_fd == -1) {
+        perror("eventfd");
+        close(sig_fd);
         return EXIT_FAILURE;
     }
 
@@ -89,26 +101,50 @@ int main(void) {
         LOGD(TAG, "rtsystem started as backup");
     }
 
-    // Main loop - wait for signals
-    struct pollfd pfd = {
-        .fd = sig_fd,
-        .events = POLLIN,
+    // Main loop - wait for SIGINT or backup promotion request
+    struct pollfd pfds[2] = {
+        { .fd = sig_fd,      .events = POLLIN },
+        { .fd = g_promote_fd, .events = POLLIN },
     };
 
     while (g_running) {
-        // Waits for sig_fd to be set to SIGINT by user ('Ctrl + c' in terminal)
-        int ret = poll(&pfd, 1, -1);
+        int ret = poll(pfds, 2, -1);
 
         if (ret < 0) {
             LOGE_ERRNO(TAG, "poll failed on signal fd: ");
             break;
         }
 
-        if (ret > 0 && (pfd.revents & POLLIN)) {
+        if (pfds[0].revents & POLLIN) {
             struct signalfd_siginfo info;
             read(sig_fd, &info, sizeof(info));
             g_running = 0;
             printf("\n");
+        }
+
+        if ((pfds[1].revents & POLLIN) && g_running) {
+            uint64_t v;
+            eventfd_read(g_promote_fd, &v);
+            LOGD(TAG, "backup promoting to primary...");
+
+            // Backup has already called task_handle_mark_done; wait to confirm then clean up
+            ret = task_array_poll_all(&system_tasks, sig_fd, SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS);
+            if (ret < 0) {
+                LOGW(TAG, "backup task did not finish cleanly during promotion, cancelling");
+                task_array_cancel_all(&system_tasks);
+            }
+            task_array_join_all(&system_tasks);
+            task_array_destroy_all(&system_tasks);
+
+            // Pass last committed state to primary so it can restore after restart
+            process_pair_message_t committed = process_pair_backup_get_last_committed();
+            task_handle_t *h = task_create(&system_tasks, &primary_task_config, &committed, "primary");
+            if (h == NULL) {
+                LOGE(TAG, "failed to create primary task after promotion");
+                g_running = 0;
+            } else {
+                LOGD(TAG, "promoted to primary");
+            }
         }
     }
     // Main loop finished
@@ -174,5 +210,6 @@ int main(void) {
     #endif
 
     close(sig_fd);
+    close(g_promote_fd);
     return EXIT_SUCCESS;
 }

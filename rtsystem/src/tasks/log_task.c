@@ -90,7 +90,11 @@ static void print_log_message(const log_message_t* msg) {
     struct tm tm;
     localtime_r(&msg->timestamp.tv_sec, &tm);
 
-    fprintf(stderr, "%02d:%02d:%02d.%06ld %s%s %s%-" XSTR(LOG_TAG_MIN_WIDTH) "s%s: %s" COLOR_RESET "\n",
+    char pid_str[16];
+    snprintf(pid_str, sizeof(pid_str), "%d", (int)getpid());
+
+    fprintf(stderr, "[%s%s" COLOR_RESET "] %02d:%02d:%02d.%06ld %s%s %s%-" XSTR(LOG_TAG_MIN_WIDTH) "s%s: %s" COLOR_RESET "\n",
+            get_tag_color(pid_str), pid_str,
             tm.tm_hour, tm.tm_min, tm.tm_sec,
             msg->timestamp.tv_nsec / LOG_TIME_RESOLUTION_NS,
             colors[msg->level],
