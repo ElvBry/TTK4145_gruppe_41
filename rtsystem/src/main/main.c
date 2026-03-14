@@ -62,8 +62,6 @@ int main(void) {
         }
     #endif
 
-    LOGD(TAG, "rtsystem started");
-
     // Initialize system tasks array
     err = task_array_init(&system_tasks, SYSTEM_TASKS_ARRAY_CAPACITY);
     if (err != 0) {
@@ -79,13 +77,16 @@ int main(void) {
 
     // Try to start process as primary
     task_handle_t *handle = task_create(&system_tasks, &primary_task_config, NULL, "primary");
-    if (handle == NULL) {
+    if (handle != NULL) {
+        LOGD(TAG, "rtsystem started as primary");
+    } else {
         // primary_init returned -1, primary process already exist
         handle = task_create(&system_tasks, &backup_task_config, NULL, "backup");
         if (handle == NULL) {
             LOGE(TAG, "failed to initialize backup task");
             return EXIT_FAILURE;
         }
+        LOGD(TAG, "rtsystem started as backup");
     }
 
     // Main loop - wait for signals

@@ -46,4 +46,8 @@ static uint32_t crc32(const void *data, size_t len) {
     return ~crc;
 }
 
+static uint32_t process_pair_message_checksum(const process_pair_message_t *m) {
+    return crc32(m, offsetof(process_pair_message_t, crc32)); 
+}
+
 #endif
