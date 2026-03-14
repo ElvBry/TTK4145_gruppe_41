@@ -1,10 +1,7 @@
-#pragma once
+#ifndef ELEVATOR_HARDWARE_H
+#define ELEVATOR_HARDWARE_H
 
-// Number of floors. Hardware-dependent, do not modify.
-#define N_FLOORS 4
-
-// Number of buttons (and corresponding lamps) on a per-floor basis
-#define N_BUTTONS 3
+#include <rtsystem/rtsystem_config.h>
 
 typedef enum tag_elevator_hardware_motor_direction { 
     DIRN_DOWN = -1,
@@ -12,7 +9,7 @@ typedef enum tag_elevator_hardware_motor_direction {
     DIRN_UP = 1
 } elevator_hardware_motor_direction_t;
 
-typedef enum tag_elevator_hardware_lamp_type { 
+typedef enum tag_elevator_hardware_button_type { 
     BUTTON_CALL_UP = 0,
     BUTTON_CALL_DOWN = 1,
     BUTTON_COMMAND = 2
@@ -30,3 +27,5 @@ int elevator_hardware_get_button_signal(elevator_hardware_button_type_t button, 
 int elevator_hardware_get_floor_sensor_signal(void);
 int elevator_hardware_get_stop_signal(void);
 int elevator_hardware_get_obstruction_signal(void);
+
+#endif

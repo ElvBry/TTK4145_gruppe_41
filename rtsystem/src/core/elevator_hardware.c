@@ -5,9 +5,10 @@
 #include <stdio.h>
 #include <pthread.h>
 
+#include <rtsystem/rtsystem_config.h>
 #include "rtsystem/core/elevator_hardware.h"
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+#define LOG_LEVEL LOG_LEVEL_ELEVATOR_HARDWARE
 #ifdef ASYNC_LOG
     #include <rtsystem/async_log_helper.h>
 #else
@@ -20,13 +21,17 @@ static int sockfd;
 static pthread_mutex_t sockmtx;
 
 void elevator_hardware_init() {
-    char ip[16] = "localhost";
-    char port[8] = "15657";
+    char ip[16]  = ELEVATOR_HARDWARE_IP;
+    char port[8] = ELEVATOR_HARDWARE_PORT;
     
     pthread_mutex_init(&sockmtx, NULL);
-    
+
+    errno = 0;
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    assert(sockfd != -1 && "Unable to set up socket");
+    if (sockfd == -1) {
+        LOGE_ERRNO(TAG, "could not set up socket with error: ");
+        exit(EXIT_FAILURE);
+    }
     
     struct addrinfo hints = {
         .ai_family      = AF_INET, 

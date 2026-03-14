@@ -3,7 +3,7 @@
 #include <rtsystem/tasks/process_pair_backup_task.h>
 
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+#define LOG_LEVEL LOG_LEVEL_BACKUP_TASK
 #ifdef ASYNC_LOG
     #include <rtsystem/async_log_helper.h>
 #else

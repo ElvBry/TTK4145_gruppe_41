@@ -9,14 +9,14 @@
 #include <sched.h>
 
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+#include <rtsystem/rtsystem_config.h>
+#define LOG_LEVEL LOG_LEVEL_LOG_TASK
 #include <rtsystem/tasks/log_task.h>
 #include <rtsystem/async_log_helper.h>
 
 
 static const char *TAG = "log_task";
 
-#define LOG_POLL_TIMEOUT_MS 5000
 #define LOG_TIME_RESOLUTION_NS 1000
 #define LOG_TAG_MIN_WIDTH 12
 
@@ -113,12 +113,7 @@ static void* log_task(void* arg) {
     };
 
     for (;;) {
-        int err = poll(pfds, 2, LOG_POLL_TIMEOUT_MS);
-        
-        if (err == 0) {
-            // normal, timeout for optional heartbeat functionality
-            continue;
-        }
+        int err = poll(pfds, 2, -1);
 
         if (err == -1) {
             fprintf(stderr, "%s : could not poll log queue: %s", TAG, strerror(errno));

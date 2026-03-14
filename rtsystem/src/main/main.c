@@ -7,28 +7,21 @@
 #include <poll.h>
 #include <sys/signalfd.h>
 
+#include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
 #include "rtsystem/tasks/process_pair_backup_task.h"
 #include "rtsystem/tasks/process_pair_primary_task.h"
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+#define LOG_LEVEL LOG_LEVEL_MAIN
 #ifdef ASYNC_LOG
     #include <rtsystem/async_log_helper.h>
     #include <rtsystem/tasks/log_task.h>
-    #define LOG_QUEUE_SIZE 64
-    #define PRIORITY_LOG_TASK 10
-    #define LOG_TASK_SHUTDOWN_TIMEOUT_MS 3000
 #else
     #include <rtsystem/log_helper.h>
 #endif
 
 
 static const char *TAG = "main";
-
-#define PRIORITY_MAIN 50
-#define SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS 3000
-
-#define SYSTEM_TASKS_ARRAY_CAPACITY 3
 
 // Shared global flag for graceful shutdown
 volatile sig_atomic_t g_running = 1;

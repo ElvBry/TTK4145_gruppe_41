@@ -1,10 +1,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
 #include <rtsystem/tasks/process_pair_primary_task.h>
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+#define LOG_LEVEL LOG_LEVEL_PRIMARY_TASK
 #ifdef ASYNC_LOG
     #include <rtsystem/async_log_helper.h>
 #else
@@ -12,8 +13,6 @@
 #endif
 
 const static char *TAG = "primary_task";
-
-#define APP_TASK_SHUTDOWN_TIMEOUT_MS 2000
 
 extern volatile int g_running;
 
@@ -60,7 +59,7 @@ static void process_pair_primary_cleanup(task_handle_t *self) {
 static void *process_pair_primary_entry(task_handle_t *self) {
     while (g_running && self->state != TASK_STATE_STOPPING) {
         // add process pair logic here
-        usleep(10000);
+        usleep(PROCESS_PAIR_HEARTBEAT_MS * 1000);
     }
     LOGD(TAG, "received shutdown signal with reason: %s", reason);
     process_pair_primary_cleanup(self);

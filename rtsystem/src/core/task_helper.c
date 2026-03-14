@@ -4,9 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
 
-#define LOG_LEVEL LOG_LEVEL_DEBUG
+#define LOG_LEVEL LOG_LEVEL_TASK_HELPER
 #ifdef ASYNC_LOG
     #include <rtsystem/async_log_helper.h>
 #else
