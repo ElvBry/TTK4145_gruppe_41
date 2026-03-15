@@ -34,13 +34,19 @@ typedef struct {
     bool    hall_requests[N_FLOORS][N_HALL_BUTTONS];
 } worldview_t;
 
+typedef enum {
+    PP_MSG_HEARTBEAT, // normal state update, backup should store and echo
+    PP_MSG_SHUTDOWN,  // primary is shutting down, backup should exit cleanly
+} process_pair_message_type_t;
+
 // message used by process_pairs.
 // only information required about system after restart,
 // is stored safely by backup through two sided commit process with primary.
 typedef struct {
-    elevator_state_t my_elevator_state;
-    worldview_t      worldview;
-    uint32_t         crc32;
+    process_pair_message_type_t type;
+    elevator_state_t            my_elevator_state;
+    worldview_t                 worldview;
+    uint32_t                    crc32;
 } process_pair_message_t;
 // TODO: add size check using static_assert() later in case N_floors changes mess stuff up
 
@@ -54,6 +60,10 @@ static inline uint32_t crc32(const void *data, size_t len) {
             crc = (crc >> 1) ^ (0xEDB88320u & -(crc & 1));
     }
     return ~crc;
+}
+
+static inline uint32_t process_pair_message_checksum(const process_pair_message_t *m) {
+    return crc32(m, offsetof(process_pair_message_t, crc32)); 
 }
 
 #endif

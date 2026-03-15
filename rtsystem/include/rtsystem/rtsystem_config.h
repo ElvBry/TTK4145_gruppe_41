@@ -18,11 +18,13 @@
 #define APP_TASK_SHUTDOWN_TIMEOUT_MS    2000
 
 // Heartbeats used for inter process communication
-#define PROCESS_PAIR_HEARTBEAT_MS 10
+#define PROCESS_PAIR_HEARTBEAT_MS 25
+#define PROCESS_PAIR_HEARTBEAT_TIMEOUT_MS 1000
 
-// Ports and IP used for sockets (elevator_hardware uses TCP)
+// Ports and IP used for sockets (elevator_hardware and process pair uses TCP)
 #define ELEVATOR_HARDWARE_IP   "localhost"
 #define ELEVATOR_HARDWARE_PORT "15657"
+#define PROCESS_PAIR_PORT       8081 
 
 // Elevator layout (we currently only use 4 and 3, might treat changes later)
 #define N_FLOORS   4
