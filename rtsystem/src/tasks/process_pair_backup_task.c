@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <unistd.h>
-#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/eventfd.h>
@@ -24,6 +23,7 @@ const static char *TAG = "backup_task";
 
 extern volatile int g_running;
 extern int g_promote_fd;
+extern int g_shutdown_fd;
 
 static int backup_listen_fd = -1;
 static int backup_conn_fd   = -1;
@@ -79,6 +79,10 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
 
 static void process_pair_backup_cleanup(task_handle_t *self){
     (void)self;
+    if (backup_listen_fd >= 0) {
+        close(backup_listen_fd);
+        backup_listen_fd = -1;
+    }
     if (backup_conn_fd >= 0) {
         close(backup_conn_fd);
         backup_conn_fd = -1;
@@ -128,12 +132,13 @@ static void *process_pair_backup_entry(task_handle_t *self){
         }
 
         if (message.type == PP_MSG_SHUTDOWN) {
-            LOGD(TAG, "following order from primary, killing myself...");
+            LOGD(TAG, "following order from primary, shutting down...");
             process_pair_backup_cleanup(self);
             task_handle_mark_done(self);
-            // SIGINT is blocked in main() and routed to sig_fd via signalfd,
-            // so this wakes up main's poll loop and triggers normal shutdown
-            kill(getpid(), SIGINT);
+            // Wake main()'s poll loop so it sets g_running = 0 and starts shutdown.
+            // This is equivalent to the user pressing Ctrl-C, but initiated by the
+            // primary telling us to exit.
+            eventfd_write(g_shutdown_fd, 1);
             return NULL;
         }
 
@@ -144,7 +149,14 @@ static void *process_pair_backup_entry(task_handle_t *self){
 
     process_pair_backup_cleanup(self);
     task_handle_mark_done(self);
-    eventfd_write(g_promote_fd, 1);
+    if (g_running) {
+        // Primary is gone but the system should keep running: promote to primary.
+        eventfd_write(g_promote_fd, 1);
+    } else {
+        // g_running was cleared (SIGINT received by this process): the whole
+        // system is shutting down, not just the primary. Signal main to exit.
+        eventfd_write(g_shutdown_fd, 1);
+    }
     return NULL;
 }
 

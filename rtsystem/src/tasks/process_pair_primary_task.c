@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <limits.h>
 #include <errno.h>
 
@@ -21,34 +22,41 @@
 const static char *TAG = "primary_task";
 
 // Spawns a new backup process by forking and re-executing this same binary.
-// The child starts fresh and become backup. Works on Desktop Ubuntu and WSL.
-static void spawn_backup_process(void) {
+// The child starts fresh and becomes the backup. Works on Desktop Ubuntu and WSL.
+// Returns the PID of the spawned child so the caller can reap it with waitpid()
+// when it exits. Returns -1 on failure.
+static pid_t spawn_backup_process(void) {
     // /proc/self/exe always points to the currently running binary
     char exe_path[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len < 0) {
         LOGE_ERRNO(TAG, "readlink /proc/self/exe failed: ");
-        return;
+        return -1;
     }
     exe_path[len] = '\0';
 
     pid_t pid = fork();
     if (pid < 0) {
         LOGE_ERRNO(TAG, "fork failed: ");
-        return;
+        return -1;
     }
     if (pid == 0) {
-        // Child process: detach from primary's process group
+        // Child process: create a new session so the backup is isolated from the
+        // terminal's process group. This means Ctrl-C at the terminal does NOT
+        // kill the backup directly — only the primary receives it and coordinates
+        // shutdown by sending PP_MSG_SHUTDOWN. If the primary is killed with
+        // kill -9, use `pkill -2 rtsystem` to stop the promoted backup gracefully.
         setsid();
-        // Close all inherited file descriptors so the child starts clean
+        // Close all inherited file descriptors so the child starts clean.
         for (int fd = 3; fd < 1024; fd++) close(fd);
         char *args[] = {exe_path, NULL};
         execv(exe_path, args);
         perror("execv failed");
         _exit(EXIT_FAILURE);
     }
-    // Parent continues as primary
+    // Parent (primary) continues here.
     LOGD(TAG, "spawned new backup process (pid %d)", (int)pid);
+    return pid;
 }
 
 extern volatile int g_running;
@@ -56,11 +64,15 @@ extern volatile int g_running;
 // file descriptor for socket connection with other process pair
 static int primary_connection_fd = -1;
 
+// PID of the backup process we spawned via fork+exec.
+// -1 means either we haven't spawned one yet (backup was started independently)
+// or we already reaped it. Used to call waitpid() when backup exits.
+static pid_t backup_pid = -1;
+
 // Last committed state received when this process was promoted from backup.
 // Used to restore state after promotion. Set in primary_init when init_arg != NULL.
 static process_pair_message_t initial_committed_state;
 
-char *reason = "temporary message, add later";
 
 static int   process_pair_primary_init(task_handle_t *self, void *init_arg);
 static void  process_pair_primary_cleanup(task_handle_t *self);
@@ -144,7 +156,8 @@ static void *process_pair_primary_entry(task_handle_t *self) {
                           .tv_usec = 0};
 
     if (primary_connection_fd < 0) {
-        // Promoted from backup: no backup connected yet, go spawn one
+        // Promoted from backup: no connected backup yet, jump to the respawn
+        // block which will spawn one and wait for it to connect.
         LOGD(TAG, "promoted from backup, spawning new backup...");
         goto respawn;
     }
@@ -200,8 +213,17 @@ static void *process_pair_primary_entry(task_handle_t *self) {
             primary_connection_fd = -1;
         }
 
+        // Reap the dead backup so it does not become a zombie.
+        // WNOHANG returns immediately: if backup already exited it is reaped now;
+        // if it somehow hasn't exited yet we move on and it will be reaped
+        // when SIG_IGN auto-reaps it (set in main()).
+        if (backup_pid > 0) {
+            waitpid(backup_pid, NULL, WNOHANG);
+            backup_pid = -1;
+        }
+
         LOGD(TAG, "spawning new backup...");
-        spawn_backup_process();
+        backup_pid = spawn_backup_process();
 
         struct sockaddr_in addr = {
             .sin_family      = AF_INET,
@@ -222,15 +244,30 @@ static void *process_pair_primary_entry(task_handle_t *self) {
     }
     
     if (primary_connection_fd >= 0) {
-        LOGD(TAG, "received SIGINT shutdown signal, demanding backup to kill itself");
+        // Connected: ask backup to shut down gracefully via the heartbeat channel.
+        // send() returns -1/EPIPE (not SIGPIPE) because we set SIG_IGN in main().
+        LOGD(TAG, "shutting down, sending shutdown order to backup");
         process_pair_message_t shutdown_msg = { .type = PP_MSG_SHUTDOWN };
         shutdown_msg.crc32 = process_pair_message_checksum(&shutdown_msg);
         send(primary_connection_fd, &shutdown_msg, sizeof(shutdown_msg), 0);
+    } else if (backup_pid > 0) {
+        // No connection yet: primary was shut down while still waiting for the
+        // newly spawned backup to start listening. We never established a channel
+        // to send PP_MSG_SHUTDOWN, so terminate the backup process directly.
+        LOGD(TAG, "shutting down before backup connected, terminating backup (pid %d)", (int)backup_pid);
+        kill(backup_pid, SIGTERM);
     }
 
-    LOGD(TAG, "received shutdown signal, exiting...");
-    process_pair_primary_cleanup(self);
-    LOGD(TAG, "exiting...");
+    // Wait for the backup process to exit (cleanly after PP_MSG_SHUTDOWN, or
+    // immediately after SIGTERM). If backup was already dead (kill -9) it is
+    // already a zombie and waitpid returns immediately.
+    // If backup_pid is -1 (backup was started independently, not by us), skip.
+    if (backup_pid > 0) {
+        waitpid(backup_pid, NULL, 0);
+        backup_pid = -1;
+    }
+
+    LOGD(TAG, "backup exited, primary done");
     task_handle_mark_done(self);
     return NULL;
 }

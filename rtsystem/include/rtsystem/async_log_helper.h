@@ -29,6 +29,7 @@
 typedef struct {
     int level;
     char tag[32];
+    char role[8];       // "backup" or "primary", captured at log time
     char message[256];
     struct timespec timestamp;
 } log_message_t;
@@ -37,6 +38,10 @@ typedef struct {
 extern fifo_queue_t g_log_queue;
 
 extern volatile int g_log_running;
+
+// Role of this process ("backup" or "primary"), shown in every log line.
+// Defined in main.c, updated when the process promotes.
+extern char *g_process_role;
 
 // Internal: Append log to queue (non-blocking)
 #define ALOG(_level, _tag, _fmt, ...) \
@@ -50,6 +55,8 @@ extern volatile int g_log_running;
             _msg.level = _level; \
             strncpy(_msg.tag, _tag, sizeof(_msg.tag) - 1); \
             _msg.tag[sizeof(_msg.tag) - 1] = '\0'; \
+            strncpy(_msg.role, g_process_role, sizeof(_msg.role) - 1); \
+            _msg.role[sizeof(_msg.role) - 1] = '\0'; \
             clock_gettime(CLOCK_REALTIME, &_msg.timestamp); \
             snprintf(_msg.message, sizeof(_msg.message), _fmt, ##__VA_ARGS__); \
             if (fifo_queue_send(&g_log_queue, &_msg) != 0) { \

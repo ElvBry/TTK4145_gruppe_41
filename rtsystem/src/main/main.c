@@ -28,8 +28,18 @@ static const char *TAG = "main";
 // Shared global flag for graceful shutdown
 volatile sig_atomic_t g_running = 1;
 
+// Current role of this process, shown in every log line.
+// Starts as "backup" (every process tries to bind the port first).
+// Updated to "primary" when the backup task promotes.
+char *g_process_role = "backup";
+
 // Written to by the backup task to signal main that it should promote to primary
 int g_promote_fd = -1;
+
+// Written to by the backup task to signal main that it should initiate shutdown.
+// This is used when primary sends PP_MSG_SHUTDOWN to backup — backup writes here
+// to wake main's poll loop instead of sending a signal to itself.
+int g_shutdown_fd = -1;
 
 static int sig_fd = -1;
 
@@ -41,9 +51,27 @@ int main(void) {
     struct sched_param param = { .sched_priority = PRIORITY_MAIN };
     int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
     if (err != 0) {
-        perror("failed to set main thread priority (try running with sudo)");
+        perror("failed to set main thread priority");
+        fprintf(stderr, "hint: run once after each build: make -C build setcap\n");
         return EXIT_FAILURE;
     }
+
+    // SIGPIPE: when the remote end of a TCP connection closes, the next send()
+    // would raise SIGPIPE whose default action is to terminate the process.
+    // We ignore it so send() returns -1/EPIPE instead, which we handle explicitly.
+    signal(SIGPIPE, SIG_IGN);
+
+    // SIGCHLD: when a child process spawned by primary (the backup process) dies,
+    // the kernel sends SIGCHLD to the parent. Setting SIG_IGN makes the kernel
+    // automatically reap zombie children so we do not need a wait() call for every
+    // child. We still call waitpid() explicitly in primary_task for clarity.
+    signal(SIGCHLD, SIG_IGN);
+
+    // SIGHUP: sent to all processes in a process group when the group becomes
+    // orphaned (i.e. when our parent process dies). We ignore it so a promoted
+    // backup survives its parent (the old primary) being killed.
+    signal(SIGHUP, SIG_IGN);
+
 
     // Block SIGINT and use signalfd instead
     sigset_t mask;
@@ -60,6 +88,14 @@ int main(void) {
     g_promote_fd = eventfd(0, 0);
     if (g_promote_fd == -1) {
         perror("eventfd");
+        close(sig_fd);
+        return EXIT_FAILURE;
+    }
+
+    g_shutdown_fd = eventfd(0, 0);
+    if (g_shutdown_fd == -1) {
+        perror("eventfd (shutdown)");
+        close(g_promote_fd);
         close(sig_fd);
         return EXIT_FAILURE;
     }
@@ -87,28 +123,34 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    // Try to start process as primary
-    task_handle_t *handle = task_create(&system_tasks, &primary_task_config, NULL, "primary");
+    // Try to start as backup (bind on the process-pair port).
+    // If the port is already taken, a backup is already running — connect as primary instead.
+    task_handle_t *handle = task_create(&system_tasks, &backup_task_config, NULL, "backup");
     if (handle != NULL) {
-        LOGD(TAG, "rtsystem started as primary");
+        LOGD(TAG, "rtsystem started as backup");
     } else {
-        // primary_init returned -1, primary process already exist
-        handle = task_create(&system_tasks, &backup_task_config, NULL, "backup");
+        handle = task_create(&system_tasks, &primary_task_config, NULL, "primary");
         if (handle == NULL) {
-            LOGE(TAG, "failed to initialize backup task");
+            LOGE(TAG, "failed to start as primary");
             return EXIT_FAILURE;
         }
-        LOGD(TAG, "rtsystem started as backup");
+        LOGD(TAG, "rtsystem started as primary");
     }
 
-    // Main loop - wait for SIGINT or backup promotion request
-    struct pollfd pfds[2] = {
-        { .fd = sig_fd,      .events = POLLIN },
-        { .fd = g_promote_fd, .events = POLLIN },
+    // Main loop - wait for SIGINT, backup promotion request, or backup shutdown request.
+    //
+    // Three events can fire:
+    //   sig_fd        — SIGINT from the user (Ctrl-C): begin graceful shutdown.
+    //   g_promote_fd  — backup task detected primary is gone: switch to primary role.
+    //   g_shutdown_fd — backup task received PP_MSG_SHUTDOWN from primary: also shut down.
+    struct pollfd pfds[3] = {
+        { .fd = sig_fd,        .events = POLLIN },
+        { .fd = g_promote_fd,  .events = POLLIN },
+        { .fd = g_shutdown_fd, .events = POLLIN },
     };
 
     while (g_running) {
-        int ret = poll(pfds, 2, -1);
+        int ret = poll(pfds, 3, -1);
 
         if (ret < 0) {
             LOGE_ERRNO(TAG, "poll failed on signal fd: ");
@@ -143,13 +185,21 @@ int main(void) {
                 LOGE(TAG, "failed to create primary task after promotion");
                 g_running = 0;
             } else {
-                LOGD(TAG, "promoted to primary");
+                g_process_role = "primary";
+                LOGD(TAG, "promoted to primary (pid %d) — stop with: pkill -2 rtsystem", (int)getpid());
             }
+        }
+
+        if ((pfds[2].revents & POLLIN) && g_running) {
+            uint64_t v;
+            eventfd_read(g_shutdown_fd, &v);
+            LOGD(TAG, "primary sent shutdown order, initiating graceful exit...");
+            g_running = 0;
         }
     }
     // Main loop finished
 
-    LOGD(TAG, "received SIGINT, shutting down...");
+    LOGD(TAG, "shutting down...");
 
     // Stop all system tasks
     task_array_stop_all(&system_tasks);
@@ -211,5 +261,6 @@ int main(void) {
 
     close(sig_fd);
     close(g_promote_fd);
+    close(g_shutdown_fd);
     return EXIT_SUCCESS;
 }

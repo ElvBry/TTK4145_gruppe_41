@@ -93,8 +93,11 @@ static void print_log_message(const log_message_t* msg) {
     char pid_str[16];
     snprintf(pid_str, sizeof(pid_str), "%d", (int)getpid());
 
-    fprintf(stderr, "[%s%s" COLOR_RESET "] %02d:%02d:%02d.%06ld %s%s %s%-" XSTR(LOG_TAG_MIN_WIDTH) "s%s: %s" COLOR_RESET "\n",
+    char line[512];
+    int len = snprintf(line, sizeof(line),
+            "[%s%s" COLOR_RESET "|%-7s] %02d:%02d:%02d.%06ld %s%s %s%-" XSTR(LOG_TAG_MIN_WIDTH) "s%s: %s" COLOR_RESET "\n",
             get_tag_color(pid_str), pid_str,
+            msg->role,
             tm.tm_hour, tm.tm_min, tm.tm_sec,
             msg->timestamp.tv_nsec / LOG_TIME_RESOLUTION_NS,
             colors[msg->level],
@@ -103,6 +106,7 @@ static void print_log_message(const log_message_t* msg) {
             msg->tag,
             colors[msg->level],
             msg->message);
+    write(STDERR_FILENO, line, len);
 }
 
 static void* log_task(void* arg) {

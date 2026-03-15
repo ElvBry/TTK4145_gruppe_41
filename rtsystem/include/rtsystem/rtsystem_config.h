@@ -1,19 +1,27 @@
 #ifndef RTSYSTEM_CONFIG_H
 #define RTSYSTEM_CONFIG_H
 
-// Thread scheduling priorities (SCHED_FIFO, higher number means higher priority, should not exceed 50)
-#define PRIORITY_MAIN     50
-#define PRIORITY_PRIMARY  45
-#define PRIORITY_BACKUP   45
-#define PRIORITY_LOG_TASK 10
+// Thread scheduling priorities for SCHED_FIFO (1 = lowest real-time, 99 = highest).
+// The relative ordering matters: main > primary/backup tasks > log.
+// Kept low (1-10) to avoid starving system threads. Grant permission with:
+//   sudo setcap cap_sys_nice+ep <binary>   (once after each build, no sudo at runtime)
+#define PRIORITY_MAIN     10
+#define PRIORITY_PRIMARY   5
+#define PRIORITY_BACKUP    5
+#define PRIORITY_LOG_TASK  1
 
 // Task array capacities (make sure it is larger than the amount of created tasks)
 #define SYSTEM_TASKS_ARRAY_CAPACITY      3
 #define APPLICATION_TASKS_ARRAY_CAPACITY 6
 #define LOG_QUEUE_SIZE                   64
 
-// Shutdown timeouts (allowed time for tasks to perform clean shutdown/graceful exit before being forced)
-#define SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS 3000
+// Shutdown timeouts (allowed time for tasks to perform clean shutdown before being force-cancelled).
+//
+// SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS must be large enough to cover the primary task's full
+// shutdown sequence: wait for recv() to return (up to PROCESS_PAIR_HEARTBEAT_TIMEOUT_MS),
+// then wait for the backup process to fully exit (up to LOG_TASK_SHUTDOWN_TIMEOUT_MS).
+// Rule: SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS > PROCESS_PAIR_HEARTBEAT_TIMEOUT_MS + LOG_TASK_SHUTDOWN_TIMEOUT_MS
+#define SYSTEM_TASK_SHUTDOWN_TIMEOUT_MS 8000
 #define LOG_TASK_SHUTDOWN_TIMEOUT_MS    3000
 #define APP_TASK_SHUTDOWN_TIMEOUT_MS    2000
 

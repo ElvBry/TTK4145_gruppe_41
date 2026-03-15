@@ -55,11 +55,14 @@ int main(void) {
     #define LOG_COLOR_RESET  "\033[0m"
 #endif
 
+extern char *g_process_role;
+
 #define LOG(level, tag, fmt, ...) \
     do { if (level >= LOG_LEVEL) \
-        fprintf(stderr, "%s%s %s: " fmt LOG_COLOR_RESET "\n", \
+        fprintf(stderr, "%s%s [%-7s] %s: " fmt LOG_COLOR_RESET "\n", \
             (const char*[]){LOG_COLOR_CYAN, LOG_COLOR_GREEN, LOG_COLOR_YELLOW, LOG_COLOR_RED}[level], \
             (const char*[]){"D", "I", "W", "E"}[level], \
+            g_process_role, \
             tag, ##__VA_ARGS__); \
     } while(0)
 
