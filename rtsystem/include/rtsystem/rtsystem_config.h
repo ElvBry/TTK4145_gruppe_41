@@ -27,6 +27,7 @@
 // Elevator layout (we currently only use 4 and 3, might treat changes later)
 #define N_FLOORS   4
 #define N_BUTTONS  3
+#define N_ELEVATORS 3
 
 // Per-module log levels from log_helper.h or async_log_helper.h (only used for ease of development)
 #define LOG_LEVEL_MAIN              LOG_LEVEL_DEBUG
