@@ -167,7 +167,7 @@ static void *process_pair_primary_entry(task_handle_t *self) {
     while (g_running && self->state != TASK_STATE_STOPPING) {
         // TODO: get current state from value found by elevator_task
         elevator_state_t state = {
-            .payload_placeholder = 0,
+            .floor = 0,
         };
         // TODO: get current worldview from value found by elevator_task
         worldview_t worldview = {
