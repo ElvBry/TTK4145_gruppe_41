@@ -131,6 +131,11 @@ static void *process_pair_backup_entry(task_handle_t *self){
             continue;
         }
 
+        if (message.type == PP_MSG_REQUEST_STATE) {
+            send(backup_conn_fd, &committed, sizeof(committed), 0);
+            continue;
+        }
+
         if (message.type == PP_MSG_SHUTDOWN) {
             LOGD(TAG, "following order from primary, shutting down...");
             process_pair_backup_cleanup(self);

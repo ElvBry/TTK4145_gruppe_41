@@ -123,6 +123,13 @@ static int process_pair_primary_init(task_handle_t *self, void *init_arg) {
             return -1;  // No backup listening, become backup instead
         }
         primary_connection_fd = fd;
+
+        // Request backup's last committed state — read once on init, never again
+        process_pair_message_t req = { .type = PP_MSG_REQUEST_STATE };
+        req.crc32 = process_pair_message_checksum(&req);
+        send(primary_connection_fd, &req, sizeof(req), 0);
+        recv(primary_connection_fd, &initial_committed_state,
+             sizeof(initial_committed_state), MSG_WAITALL);
     }
 
     int err = task_array_init(&application_tasks, APPLICATION_TASKS_ARRAY_CAPACITY);
@@ -135,8 +142,7 @@ static int process_pair_primary_init(task_handle_t *self, void *init_arg) {
         return -1;
     }
     LOGD(TAG, "application task array initialized, creating tasks...");
-    // Create tasks needed for program (will probably not need more tasks)
-    task_handle_t *handle = task_create(&application_tasks, &elevator_task_config, NULL, "elevator");
+    task_handle_t *handle = task_create(&application_tasks, &elevator_task_config, &initial_committed_state, "elevator");
     if (handle == NULL) {
         LOGE(TAG, "could not initialize elevator task");
         return -1;
@@ -170,20 +176,13 @@ static void *process_pair_primary_entry(task_handle_t *self) {
     LOGD(TAG, "connected to backup");
         
     while (g_running && self->state != TASK_STATE_STOPPING) {
-        // TODO: get current state from value found by elevator_task
-        elevator_state_t state = {
-            .floor = 0,
-        };
-        // TODO: get current worldview from value found by elevator_task
-        worldview_t worldview = {
-            .worldview_counter = 0,
-            .hall_requests = {{0}},
-        };
+        pthread_mutex_lock(&my_elevator.lock);
         process_pair_message_t message = {
             .type              = PP_MSG_HEARTBEAT,
-            .my_elevator_state = state,
-            .worldview         = worldview,
+            .my_elevator_state = my_elevator.elevator_state,
+            .worldview         = my_elevator.worldview,
         };
+        pthread_mutex_unlock(&my_elevator.lock);
         message.crc32 = process_pair_message_checksum(&message);
 
         ssize_t sent_bytes = send(primary_connection_fd, &message, sizeof(message), 0);

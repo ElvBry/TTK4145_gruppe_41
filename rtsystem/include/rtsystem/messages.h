@@ -34,8 +34,9 @@ typedef struct {
 } worldview_t;
 
 typedef enum {
-    PP_MSG_HEARTBEAT, // normal state update, backup should store and echo
-    PP_MSG_SHUTDOWN,  // primary is shutting down, backup should exit cleanly
+    PP_MSG_HEARTBEAT,      // normal state update, backup should store and echo
+    PP_MSG_SHUTDOWN,       // primary is shutting down, backup should exit cleanly
+    PP_MSG_REQUEST_STATE,  // primary requests backup's last committed state (sent once on init)
 } process_pair_message_type_t;
 
 // message used by process_pairs.
