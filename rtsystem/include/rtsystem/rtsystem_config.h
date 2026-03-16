@@ -8,6 +8,7 @@
 #define PRIORITY_MAIN     10
 #define PRIORITY_PRIMARY   5
 #define PRIORITY_BACKUP    5
+#define PRIORITY_ELEVATOR  4
 #define PRIORITY_LOG_TASK  1
 
 // Task array capacities (make sure it is larger than the amount of created tasks)
@@ -29,6 +30,9 @@
 #define PROCESS_PAIR_HEARTBEAT_MS 25
 #define PROCESS_PAIR_HEARTBEAT_TIMEOUT_MS 1000
 
+#define ELEVATOR_TASK_HEARTBEAT_MS 50
+#define ELEVATOR_DOOR_OPEN_TICKS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
+
 // Ports and IP used for sockets (elevator_hardware and process pair uses TCP)
 #define ELEVATOR_HARDWARE_IP   "localhost"
 #define ELEVATOR_HARDWARE_PORT "15657"
@@ -37,7 +41,7 @@
 // Elevator layout (we currently only use 4 and 3, might treat changes later)
 #define N_FLOORS   4
 #define N_BUTTONS  3
-#define N_ELEVATORS 3
+#define N_ELEVATORS 1
 
 // Per-module log levels from log_helper.h or async_log_helper.h (only used for ease of development)
 #define LOG_LEVEL_MAIN              LOG_LEVEL_DEBUG

@@ -1,4 +1,5 @@
 #include "rtsystem/messages.h"
+#include "rtsystem/tasks/elevator_task.h"
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -134,8 +135,12 @@ static int process_pair_primary_init(task_handle_t *self, void *init_arg) {
         return -1;
     }
     LOGD(TAG, "application task array initialized, creating tasks...");
-    // Create tasks needed for program
-
+    // Create tasks needed for program (will probably not need more tasks)
+    task_handle_t *handle = task_create(&application_tasks, &elevator_task_config, NULL, "elevator");
+    if (handle == NULL) {
+        LOGE(TAG, "could not initialize elevator task");
+        return -1;
+    }
     return 0;
 }
 
@@ -143,7 +148,7 @@ static void process_pair_primary_cleanup(task_handle_t *self) {
     (void)self;
     task_array_stop_all(&application_tasks);
     int err = task_array_poll_all(&application_tasks, -1, APP_TASK_SHUTDOWN_TIMEOUT_MS);
-    if (err != 0) 
+    if (err < 0)
         task_array_cancel_all(&application_tasks);
     task_array_join_all(&application_tasks);
     task_array_destroy_all(&application_tasks);
@@ -242,7 +247,7 @@ static void *process_pair_primary_entry(task_handle_t *self) {
             close(fd);
         }
     }
-    
+    LOGD(TAG, "received shutdown request...");
     if (primary_connection_fd >= 0) {
         // Connected: ask backup to shut down gracefully via the heartbeat channel.
         // send() returns -1/EPIPE (not SIGPIPE) because we set SIG_IGN in main().

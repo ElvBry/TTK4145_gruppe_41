@@ -20,12 +20,6 @@ dirn_behaviour_pair_t requests_chooseDirection(elevator_local_t e);
 
 int requests_shouldStop(elevator_local_t e);
 
-int requests_shouldClearImmediately(
-    elevator_local_t e, 
-    int btn_floor, 
-    elevator_hardware_button_type_t btn_type
-);
-
 elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e);
 
 void assignHallRequests(

@@ -15,12 +15,12 @@
     #include <rtsystem/log_helper.h>
 #endif
 
-const static char *TAG = "elevator_hardware";
+const static char *TAG = "elevator_hw";
 
 static int sockfd;
 static pthread_mutex_t sockmtx;
 
-void elevator_hardware_init() {
+int elevator_hardware_init() {
     char ip[16]  = ELEVATOR_HARDWARE_IP;
     char port[8] = ELEVATOR_HARDWARE_PORT;
     
@@ -30,7 +30,7 @@ void elevator_hardware_init() {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) {
         LOGE_ERRNO(TAG, "could not set up socket with error: ");
-        exit(EXIT_FAILURE);
+        return -1;
     }
     
     struct addrinfo hints = {
@@ -44,20 +44,21 @@ void elevator_hardware_init() {
     if (err != 0) {
         if (err == EAI_SOCKTYPE) {
             LOGE_ERRNO(TAG, "system error: ");
-            exit(EXIT_FAILURE);
+            return -1;
         }
         LOGE(TAG, "could not get addrinfo with error: %s",gai_strerror(err));
-        exit(EXIT_FAILURE);
+        return -1;
     }
     errno = 0;
     err = connect(sockfd, res->ai_addr, res->ai_addrlen);
     if (err != 0) {
         LOGE_ERRNO(TAG, "count not connect socket with error: ");
-        exit(EXIT_FAILURE);
+        return -1;
     }    
     freeaddrinfo(res);
     
     send(sockfd, (char[4]) {0}, 4, 0);
+    return 0;
 }
 
 

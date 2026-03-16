@@ -88,24 +88,6 @@ int requests_shouldStop(elevator_local_t e) {
     }
 }
 
-// Returns 1 if a newly pressed button should be cleared immediately because
-// the elevator is already at that floor travelling in the matching direction.
-// btn_type uses elevator_hardware_button_type_t values:
-//   BUTTON_CALL_UP(0)   == B_HallUp
-//   BUTTON_CALL_DOWN(1) == B_HallDown
-//   BUTTON_COMMAND(2)   == B_Cab
-int requests_shouldClearImmediately(elevator_local_t e, int btn_floor,
-                                    elevator_hardware_button_type_t btn_type) {
-    return
-        e.state.floor == btn_floor &&
-        (
-            (e.state.dirn == DIRN_UP   && btn_type == BUTTON_CALL_UP)   ||
-            (e.state.dirn == DIRN_DOWN  && btn_type == BUTTON_CALL_DOWN) ||
-            e.state.dirn == DIRN_STOP   ||
-            btn_type == BUTTON_COMMAND
-        );
-}
-
 // Clear all applicable requests at the current floor. Returns the modified elevator.
 // - Always clears the cab request at this floor.
 // - Clears the hall request in the direction of travel.

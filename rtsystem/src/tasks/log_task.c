@@ -18,7 +18,7 @@
 static const char *TAG = "log_task";
 
 #define LOG_TIME_RESOLUTION_NS 1000
-#define LOG_TAG_MIN_WIDTH 12
+#define LOG_TAG_MIN_WIDTH 14
 
 // Helper macros for stringifying LOG_TAG_MIN_WIDTH in format string
 #define STR(x) #x

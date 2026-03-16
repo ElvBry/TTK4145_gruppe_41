@@ -2,6 +2,7 @@ add_library(core STATIC
     fifo_queue.c
     task_helper.c
     elevator_hardware.c
+    elevator_control_helper.c
 )
 
 target_include_directories(core PUBLIC

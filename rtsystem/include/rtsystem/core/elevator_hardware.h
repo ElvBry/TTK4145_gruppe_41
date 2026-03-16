@@ -12,10 +12,10 @@ typedef enum tag_elevator_hardware_motor_direction {
 typedef enum tag_elevator_hardware_button_type { 
     BUTTON_CALL_UP = 0,
     BUTTON_CALL_DOWN = 1,
-    BUTTON_COMMAND = 2
+    BUTTON_CAB = 2
 } elevator_hardware_button_type_t;
 
-void elevator_hardware_init();
+int elevator_hardware_init();
 
 void elevator_hardware_set_motor_direction(elevator_hardware_motor_direction_t dirn);
 void elevator_hardware_set_button_lamp(elevator_hardware_button_type_t button, int floor, int value);

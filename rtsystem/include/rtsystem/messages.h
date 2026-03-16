@@ -11,9 +11,6 @@
 #define N_HALL_BUTTONS 2
 
 // TODO: might define somewhere else after elevator setup is known.
-// might also be named cab state or something similar
-// data sent from slave to master each heartbeat
-
 
 typedef enum {
     EB_IDLE      = 0,
@@ -21,8 +18,10 @@ typedef enum {
     EB_DOOR_OPEN = 2,
 } elevator_behaviour_t;
 
+
+// TODO: Could probably be called cab state instead, but not worth doing before having a working model
 typedef struct {
-    int8_t                              floor;
+    int8_t                              floor; // -1 for being in between floors/unknown
     elevator_hardware_motor_direction_t dirn;
     elevator_behaviour_t                behaviour;
     bool                                cab_requests[N_FLOORS];
@@ -40,8 +39,10 @@ typedef enum {
 } process_pair_message_type_t;
 
 // message used by process_pairs.
-// only information required about system after restart,
-// is stored safely by backup through two sided commit process with primary.
+// should be only information required about system after restart,
+// is supposed to be stored safely by backup through two sided commit process with primary.
+// TODO: we only require cab_requests at startup, should use that instead of elevator state
+// We should also store if the door is opened or not as that might have effect in case there is an obstruction
 typedef struct {
     process_pair_message_type_t type;
     elevator_state_t            my_elevator_state;
