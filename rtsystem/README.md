@@ -95,5 +95,5 @@ pkill -2 rtsystem
 ```
 or
 ```bash
-pkill -2 <pid of primary> 
+kill -2 <pid of primary> 
 ```
