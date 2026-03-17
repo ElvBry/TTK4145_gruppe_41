@@ -35,13 +35,25 @@
 
 // Ports and IP used for sockets (elevator_hardware and process pair uses TCP)
 #define ELEVATOR_HARDWARE_IP   "localhost"
-#define ELEVATOR_HARDWARE_PORT "15657"
-#define PROCESS_PAIR_PORT       8081 
+#define ELEVATOR_HARDWARE_PORT "1567"
+#define PROCESS_PAIR_PORT       8081
 
 // Elevator layout (we currently only use 4 and 3, might treat changes later)
-#define N_FLOORS   4
-#define N_BUTTONS  3
-#define N_ELEVATORS 1
+#define N_FLOORS    4
+#define N_BUTTONS   3
+#define N_ELEVATORS 3
+
+// UDP inter-elevator networking.
+//
+// Port assignment: PORT(sender, receiver) = BASE + sender * N_ELEVATORS + receiver
+// Each elevator binds one recv and send socket per peer 
+// Example with N_ELEVATORS=3, BASE=20000:
+//   0->1: 20001   0->2: 20002
+//   1->0: 20003   1->2: 20005
+//   2->0: 20006   2->1: 20007
+#define ELEVATOR_NET_BASE_PORT         20000
+#define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" }
+#define ELEVATOR_NET_MAX_LOSSES        8     // consecutive missed ticks before disconnect
 
 // Per-module log levels from log_helper.h or async_log_helper.h (only used for ease of development)
 #define LOG_LEVEL_MAIN              LOG_LEVEL_DEBUG
@@ -50,5 +62,6 @@
 #define LOG_LEVEL_ELEVATOR_HARDWARE LOG_LEVEL_DEBUG
 #define LOG_LEVEL_TASK_HELPER       LOG_LEVEL_DEBUG
 #define LOG_LEVEL_LOG_TASK          LOG_LEVEL_DEBUG
+#define LOG_LEVEL_ELEVATOR_NETWORK  LOG_LEVEL_DEBUG
 
 #endif

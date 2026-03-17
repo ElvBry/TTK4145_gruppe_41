@@ -1,5 +1,6 @@
 set(TASK_SOURCES
-    elevator_task.c process_pair_backup_task.c process_pair_primary_task.c
+    elevator_task.c elevator_fsm.c elevator_roles.c
+    process_pair_backup_task.c process_pair_primary_task.c
 )
 
 if(ASYNC_LOG)

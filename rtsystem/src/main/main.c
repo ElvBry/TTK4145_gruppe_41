@@ -13,6 +13,7 @@
 #include "rtsystem/tasks/process_pair_backup_task.h"
 #include "rtsystem/tasks/process_pair_primary_task.h"
 #include <rtsystem/messages.h>
+#include <rtsystem/core/elevator_network.h>
 
 #define LOG_LEVEL LOG_LEVEL_MAIN
 #ifdef ASYNC_LOG
@@ -46,7 +47,17 @@ static int sig_fd = -1;
 // Queue containing all system tasks, needed for graceful shutdown
 static task_array_t system_tasks;
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "--id") == 0) {
+            g_elevator_id = atoi(argv[i + 1]);
+            break;
+        }
+    }
+    if (g_elevator_id < 0 || g_elevator_id >= N_ELEVATORS) {
+        fprintf(stderr, "usage: rtsystem --id <0..%d>\n", N_ELEVATORS - 1);
+        return EXIT_FAILURE;
+    }
     // Set main thread priority
     struct sched_param param = { .sched_priority = PRIORITY_MAIN };
     int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);

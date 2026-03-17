@@ -1,10 +1,13 @@
 #include <pthread.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "rtsystem/tasks/elevator_task.h"
-#include "rtsystem/core/elevator_control_helper.h"
+#include "rtsystem/tasks/elevator_fsm.h"
+#include "rtsystem/tasks/elevator_roles.h"
 #include "rtsystem/core/elevator_hardware.h"
+#include "rtsystem/core/elevator_network.h"
 #include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
 #include <rtsystem/messages.h>
@@ -16,13 +19,11 @@
     #include <rtsystem/log_helper.h>
 #endif
 
-const static char *TAG = "elevator_task";
+static const char *TAG = "elevator_task";
 
 extern volatile int g_running;
 
 local_elevator_t my_elevator = {0};
-
-int door_timer_ticks = 0;
 
 static void restore_state(const process_pair_message_t *committed) {
     pthread_mutex_lock(&my_elevator.lock);
@@ -40,9 +41,8 @@ static void restore_state(const process_pair_message_t *committed) {
     pthread_mutex_unlock(&my_elevator.lock);
 }
 
-int elevator_startup_sequence() {
+static void elevator_startup_sequence(void) {
     int8_t current_floor = -1;
-
     while (current_floor == -1) {
         pthread_mutex_lock(&my_elevator.lock);
         my_elevator.elevator_state.behaviour = EB_MOVING;
@@ -58,10 +58,9 @@ int elevator_startup_sequence() {
     elevator_hardware_set_motor_direction(DIRN_STOP);
     pthread_mutex_unlock(&my_elevator.lock);
     LOGD(TAG, "startup sequence done, at floor: %d", current_floor);
-    return 0;
 }
 
-void read_update_cab_state() {
+void read_update_cab_state(void) {
     pthread_mutex_lock(&my_elevator.lock);
     for (int f = 0; f < N_FLOORS; f++)
         my_elevator.elevator_state.cab_requests[f] |= elevator_hardware_get_button_signal(BUTTON_CAB, f);
@@ -69,21 +68,7 @@ void read_update_cab_state() {
     pthread_mutex_unlock(&my_elevator.lock);
 }
 
-void read_update_hall_state() {
-    static bool prev_hall[N_FLOORS][N_HALL_BUTTONS] = {0};
-    pthread_mutex_lock(&my_elevator.lock);
-    for (int f = 0; f < N_FLOORS; f++) {
-        for (int b = 0; b < N_HALL_BUTTONS; b++) {
-            bool signal = elevator_hardware_get_button_signal(b, f);
-            if (signal && !prev_hall[f][b])
-                my_elevator.detected_hall_calls[f][b] = true;
-            prev_hall[f][b] = signal;
-        }
-    }
-    pthread_mutex_unlock(&my_elevator.lock);
-}
-
-void write_elevator_state() {
+void write_elevator_state(void) {
     pthread_mutex_lock(&my_elevator.lock);
 
     elevator_hardware_motor_direction_t safe_dirn = my_elevator.elevator_state.dirn;
@@ -106,109 +91,6 @@ void write_elevator_state() {
     pthread_mutex_unlock(&my_elevator.lock);
 }
 
-static void elevator_fsm_update(elevator_local_t *e) {
-    // Idle: check if there are pending requests
-    if (e->state.behaviour == EB_IDLE) {
-        dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
-        if (pair.behaviour != EB_IDLE) {
-            e->state.dirn      = pair.dirn;
-            e->state.behaviour = pair.behaviour;
-            if (pair.behaviour == EB_DOOR_OPEN) {
-                *e = requests_clearAtCurrentFloor(*e);
-                door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
-            }
-        }
-    }
-
-    // Moving: check if we should stop
-    if (e->state.behaviour == EB_MOVING && e->state.floor != -1) {
-        if (requests_shouldStop(*e)) {
-            e->state.dirn = DIRN_STOP;
-            elevator_hardware_set_motor_direction(DIRN_STOP);
-            *e = requests_clearAtCurrentFloor(*e);
-            e->state.behaviour = EB_DOOR_OPEN;
-            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
-        }
-    }
-
-    // Door timer. Paused while obstructed
-    if (door_timer_ticks > 0) {
-        if (elevator_hardware_get_obstruction_signal())
-            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
-        (door_timer_ticks)--;
-        if (door_timer_ticks == 0) {
-            *e = requests_clearAtCurrentFloor(*e);
-            dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
-            e->state.dirn      = pair.dirn;
-            e->state.behaviour = pair.behaviour;
-            if (pair.behaviour == EB_DOOR_OPEN)
-                door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
-        }
-    }
-}
-
-
-static elevator_local_t take_snapshot() {
-    pthread_mutex_lock(&my_elevator.lock);
-    elevator_local_t local = { .state = my_elevator.elevator_state };
-    memcpy(local.hall_requests, my_elevator.assigned_halls, sizeof(local.hall_requests));
-    pthread_mutex_unlock(&my_elevator.lock);
-    return local;
-}
-
-static void commit_snapshot(const elevator_local_t *local) {
-    pthread_mutex_lock(&my_elevator.lock);
-    my_elevator.elevator_state = local->state;
-    // Only write back hall requests if there is a single elevator, master manages hall requests in connected system
-    if (N_ELEVATORS == 1) {                                                                                                                   
-        for (int f = 0; f < N_FLOORS; f++)
-            for (int b = 0; b < N_HALL_BUTTONS; b++)                                                                                          
-                my_elevator.worldview.hall_requests[f][b] |= my_elevator.detected_hall_calls[f][b];                                         
-        my_elevator.worldview.worldview_counter++;
-        memset(my_elevator.detected_hall_calls, 0, sizeof(my_elevator.detected_hall_calls));
-        memcpy(my_elevator.assigned_halls, local->hall_requests, sizeof(my_elevator.assigned_halls));
-    }
-    pthread_mutex_unlock(&my_elevator.lock);
-}
-
-static const char *behaviour_str(elevator_behaviour_t b) {
-    switch (b) {
-        case EB_IDLE:      return "IDLE";
-        case EB_MOVING:    return "MOVING";
-        case EB_DOOR_OPEN: return "DOOR_OPEN";
-        default:           return "UNKNOWN";
-    }
-}
-
-static const char *dirn_str(elevator_hardware_motor_direction_t d) {
-    switch (d) {
-        case DIRN_UP:   return "UP";
-        case DIRN_DOWN: return "DOWN";
-        case DIRN_STOP: return "STOP";
-        default:        return "UNKNOWN";
-    }
-}
-
-static void log_elevator_state(const elevator_local_t *e) {
-    char cab[N_FLOORS + 1];
-    for (int f = 0; f < N_FLOORS; f++)
-        cab[f] = e->state.cab_requests[f] ? '1' : '0';
-    cab[N_FLOORS] = '\0';
-
-    char hall[N_FLOORS * 3 + 1];
-    int pos = 0;
-    for (int f = 0; f < N_FLOORS; f++) {
-        hall[pos++] = e->hall_requests[f][0] ? 'U' : '-';
-        hall[pos++] = e->hall_requests[f][1] ? 'D' : '-';
-        if (f < N_FLOORS - 1) hall[pos++] = ' ';
-    }
-    hall[pos] = '\0';
-
-    LOGD(TAG, "state: floor=%-2d dirn=%-4s behaviour=%-9s | cab=[%s] hall=[%s]",
-         e->state.floor, dirn_str(e->state.dirn), behaviour_str(e->state.behaviour),
-         cab, hall);
-}
-
 static int   elevator_init(task_handle_t *self, void *init_arg);
 static void  elevator_cleanup(task_handle_t *self);
 static void *elevator_entry(task_handle_t *self);
@@ -229,6 +111,8 @@ static int elevator_init(task_handle_t *self, void *init_arg) {
     pthread_mutex_init(&my_elevator.lock, &attr);
     pthread_mutexattr_destroy(&attr);
 
+    LOGI(TAG, "elevator id=%d  hardware=%s:%s  pp_port=%d",
+         g_elevator_id, ELEVATOR_HARDWARE_IP, ELEVATOR_HARDWARE_PORT, PROCESS_PAIR_PORT);
     LOGD(TAG, "initializing elevator hardware");
     if (elevator_hardware_init() != 0) {
         LOGE(TAG, "could not initialize elevator hardware");
@@ -241,13 +125,20 @@ static int elevator_init(task_handle_t *self, void *init_arg) {
     if (init_arg != NULL)
         restore_state((const process_pair_message_t *)init_arg);
 
+    elevator_roles_init_peer_state();
+
+    if (elevator_net_init() != 0) {
+        LOGE(TAG, "failed to initialize elevator network");
+        return -1;
+    }
+
     errno = 0;
     return 0;
 }
 
 static void elevator_cleanup(task_handle_t *self) {
     (void)self;
-    // TODO: might cause concurrency issues with primary, fix when implemented
+    elevator_net_cleanup();
     pthread_mutex_destroy(&my_elevator.lock);
 }
 
@@ -256,12 +147,19 @@ static void *elevator_entry(task_handle_t *self) {
 
     while (g_running && self->state != TASK_STATE_STOPPING) {
         read_update_cab_state();
-        read_update_hall_state();   // single elevator: uses updated state from hardware
-                                    // multi elevator: replace with receive_hall_assignments()
+        switch (elevator_role) {
+            case DISCONNECTED: elevator_logic_disconnected(); break;
+            case SLAVE:        elevator_logic_slave();        break;
+            case MASTER:       elevator_logic_master();       break;
+            default:
+                LOGE(TAG, "unhandled role: %d", elevator_role);
+                elevator_role = DISCONNECTED;
+                break;
+        }
 
         elevator_local_t local = take_snapshot();
         elevator_fsm_update(&local);
-        commit_snapshot(&local);    // TODO: also propose state to primary for process pair commit
+        commit_snapshot(&local);
 
         if (++tick % 10 == 0)
             log_elevator_state(&local);

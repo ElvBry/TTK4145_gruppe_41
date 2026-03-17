@@ -3,6 +3,7 @@ add_library(core STATIC
     task_helper.c
     elevator_hardware.c
     elevator_control_helper.c
+    elevator_network.c
 )
 
 target_include_directories(core PUBLIC

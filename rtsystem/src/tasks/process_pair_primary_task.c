@@ -1,4 +1,5 @@
 #include "rtsystem/messages.h"
+#include <rtsystem/core/elevator_network.h>
 #include "rtsystem/tasks/elevator_task.h"
 #include <netinet/in.h>
 #include <stdlib.h>
@@ -50,7 +51,9 @@ static pid_t spawn_backup_process(void) {
         setsid();
         // Close all inherited file descriptors so the child starts clean.
         for (int fd = 3; fd < 1024; fd++) close(fd);
-        char *args[] = {exe_path, NULL};
+        char id_buf[16];
+        snprintf(id_buf, sizeof(id_buf), "%d", g_elevator_id);
+        char *args[] = {exe_path, "--id", id_buf, NULL};
         execv(exe_path, args);
         perror("execv failed");
         _exit(EXIT_FAILURE);
