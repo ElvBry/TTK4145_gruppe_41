@@ -8,6 +8,7 @@
 #include <rtsystem/tasks/process_pair_backup_task.h>
 #include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
+#include <rtsystem/core/elevator_network.h>
 #include <rtsystem/messages.h>
 
 
@@ -64,7 +65,7 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
     struct sockaddr_in addr = {
         .sin_family      = AF_INET,
         .sin_addr.s_addr = INADDR_ANY,
-        .sin_port        = htons(PROCESS_PAIR_PORT),
+        .sin_port        = htons(g_process_pair_port),
     };
     int err = bind(fd, (struct sockaddr *)&addr, sizeof(addr));
     if (err != 0 || listen(fd, 1) < 0) {
@@ -99,7 +100,7 @@ static void *process_pair_backup_entry(task_handle_t *self){
                           .tv_usec = 0};
     setsockopt(backup_listen_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    LOGD(TAG, "started, waiting for primary on port %d", PROCESS_PAIR_PORT);
+    LOGD(TAG, "started, waiting for primary on port %d", g_process_pair_port);
     backup_conn_fd = accept(backup_listen_fd, NULL, NULL);
     close(backup_listen_fd);
     backup_listen_fd = -1;

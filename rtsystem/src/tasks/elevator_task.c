@@ -1,5 +1,6 @@
 #include <pthread.h>
 #include <string.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 
@@ -111,10 +112,12 @@ static int elevator_init(task_handle_t *self, void *init_arg) {
     pthread_mutex_init(&my_elevator.lock, &attr);
     pthread_mutexattr_destroy(&attr);
 
+    char hw_port[16];
+    snprintf(hw_port, sizeof(hw_port), "%d", ELEVATOR_HW_BASE_PORT + g_elevator_id);
     LOGI(TAG, "elevator id=%d  hardware=%s:%s  pp_port=%d",
-         g_elevator_id, ELEVATOR_HARDWARE_IP, ELEVATOR_HARDWARE_PORT, PROCESS_PAIR_PORT);
+         g_elevator_id, ELEVATOR_HARDWARE_IP, hw_port, g_process_pair_port);
     LOGD(TAG, "initializing elevator hardware");
-    if (elevator_hardware_init() != 0) {
+    if (elevator_hardware_init(ELEVATOR_HARDWARE_IP, hw_port) != 0) {
         LOGE(TAG, "could not initialize elevator hardware");
         return -1;
     }
@@ -147,6 +150,18 @@ static void *elevator_entry(task_handle_t *self) {
 
     while (g_running && self->state != TASK_STATE_STOPPING) {
         read_update_cab_state();
+
+        if (!elevator_hardware_connected()) {
+            LOGW(TAG, "hardware connection lost, reconnecting...");
+            elevator_hardware_set_motor_direction(DIRN_STOP);
+            while (g_running && elevator_hardware_init(NULL, NULL) != 0)
+                usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
+            if (!g_running) break;
+            door_timer_ticks = 0;
+            elevator_startup_sequence();
+            continue;
+        }
+
         switch (elevator_role) {
             case DISCONNECTED: elevator_logic_disconnected(); break;
             case SLAVE:        elevator_logic_slave();        break;

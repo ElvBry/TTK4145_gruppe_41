@@ -18,7 +18,8 @@
 
 static const char *TAG = "net";
 
-int g_elevator_id = -1;
+int g_elevator_id       = -1;
+int g_process_pair_port = -1;
 
 elevator_peer_t g_peers[N_ELEVATORS];
 

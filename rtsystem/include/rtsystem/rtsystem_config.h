@@ -33,10 +33,11 @@
 #define ELEVATOR_TASK_HEARTBEAT_MS 50
 #define ELEVATOR_DOOR_OPEN_TICKS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
 
-// Ports and IP used for sockets (elevator_hardware and process pair uses TCP)
-#define ELEVATOR_HARDWARE_IP   "localhost"
-#define ELEVATOR_HARDWARE_PORT "1567"
-#define PROCESS_PAIR_PORT       8081
+// Ports and IP used for sockets (elevator_hardware and process pair uses TCP).
+// Elevator 0: hw=1567, pp=8081 | Elevator 1: hw=1568, pp=8082 | etc.
+#define ELEVATOR_HARDWARE_IP    "localhost"
+#define ELEVATOR_HW_BASE_PORT   1567
+#define PROCESS_PAIR_BASE_PORT  8081
 
 // Elevator layout (we currently only use 4 and 3, might treat changes later)
 #define N_FLOORS    4
@@ -60,7 +61,7 @@
 #define LOG_LEVEL_PRIMARY_TASK      LOG_LEVEL_DEBUG
 #define LOG_LEVEL_BACKUP_TASK       LOG_LEVEL_DEBUG
 #define LOG_LEVEL_ELEVATOR_HARDWARE LOG_LEVEL_DEBUG
-#define LOG_LEVEL_TASK_HELPER       LOG_LEVEL_DEBUG
+#define LOG_LEVEL_TASK_HELPER       LOG_LEVEL_INFO
 #define LOG_LEVEL_LOG_TASK          LOG_LEVEL_DEBUG
 #define LOG_LEVEL_ELEVATOR_NETWORK  LOG_LEVEL_DEBUG
 

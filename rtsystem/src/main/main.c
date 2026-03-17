@@ -58,6 +58,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "usage: rtsystem --id <0..%d>\n", N_ELEVATORS - 1);
         return EXIT_FAILURE;
     }
+    g_process_pair_port = PROCESS_PAIR_BASE_PORT + g_elevator_id;
     // Set main thread priority
     struct sched_param param = { .sched_priority = PRIORITY_MAIN };
     int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);

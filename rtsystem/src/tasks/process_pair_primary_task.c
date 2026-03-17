@@ -110,7 +110,7 @@ static int process_pair_primary_init(task_handle_t *self, void *init_arg) {
         struct sockaddr_in addr = {
             .sin_family      = AF_INET,
             .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
-            .sin_port        = htons(PROCESS_PAIR_PORT),
+            .sin_port        = htons(g_process_pair_port),
         };
 
         errno = 0;
@@ -235,7 +235,7 @@ static void *process_pair_primary_entry(task_handle_t *self) {
         struct sockaddr_in addr = {
             .sin_family      = AF_INET,
             .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
-            .sin_port        = htons(PROCESS_PAIR_PORT),
+            .sin_port        = htons(g_process_pair_port),
         };
         while (g_running && self->state != TASK_STATE_STOPPING) {
             usleep(PROCESS_PAIR_HEARTBEAT_MS * 1000);

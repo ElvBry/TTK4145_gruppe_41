@@ -7,6 +7,7 @@
 #include <rtsystem/messages.h>
 
 extern int g_elevator_id;
+extern int g_process_pair_port;
 
 typedef struct {
     elevator_state_t state;
