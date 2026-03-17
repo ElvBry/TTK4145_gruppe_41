@@ -14,8 +14,9 @@ typedef struct {
     bool detected_hall_calls[N_FLOORS][N_HALL_BUTTONS]; // staged and sent to master in order to update worldview
     worldview_t worldview;
     pthread_mutex_t lock;
-} local_elevator_t;
+} local_elevator_t; // not same as elevator_local_t
 
+// TODO: could be prefixed with g_, decide later 
 extern local_elevator_t my_elevator;
 
 #endif

@@ -28,6 +28,7 @@ typedef struct {
 } elevator_state_t;
 
 // worldview shared and updated by all elevators in network
+// worldview with highest counter should be accepted
 typedef struct {
     int64_t worldview_counter;
     bool    hall_requests[N_FLOORS][N_HALL_BUTTONS];
@@ -39,20 +40,13 @@ typedef enum {
     PP_MSG_REQUEST_STATE,  // primary requests backup's last committed state (sent once on init)
 } process_pair_message_type_t;
 
-// message used by process_pairs.
-// should be only information required about system after restart,
-// is supposed to be stored safely by backup through two sided commit process with primary.
-// TODO: we only require cab_requests at startup, should use that instead of elevator state
-// We should also store if the door is opened or not as that might have effect in case there is an obstruction
 typedef struct {
     process_pair_message_type_t type;
     elevator_state_t            my_elevator_state;
     worldview_t                 worldview;
     uint32_t                    crc32;
 } process_pair_message_t;
-// TODO: add size check using static_assert() later in case N_floors changes mess stuff up
 
-// checksum function for creating and checking integrity of data
 static inline uint32_t crc32(const void *data, size_t len) {
     const uint8_t *p = data;
     uint32_t crc = 0xFFFFFFFF;

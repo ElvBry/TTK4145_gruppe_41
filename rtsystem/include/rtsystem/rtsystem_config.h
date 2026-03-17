@@ -13,7 +13,7 @@
 
 // Task array capacities (make sure it is larger than the amount of created tasks)
 #define SYSTEM_TASKS_ARRAY_CAPACITY      3
-#define APPLICATION_TASKS_ARRAY_CAPACITY 6
+#define APPLICATION_TASKS_ARRAY_CAPACITY 1
 #define LOG_QUEUE_SIZE                   64
 
 // Shutdown timeouts (allowed time for tasks to perform clean shutdown before being force-cancelled).

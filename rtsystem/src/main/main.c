@@ -73,12 +73,6 @@ int main(int argc, char *argv[]) {
     // We ignore it so send() returns -1/EPIPE instead, which we handle explicitly.
     signal(SIGPIPE, SIG_IGN);
 
-    // SIGCHLD: when a child process spawned by primary (the backup process) dies,
-    // the kernel sends SIGCHLD to the parent. Setting SIG_IGN makes the kernel
-    // automatically reap zombie children so we do not need a wait() call for every
-    // child. We still call waitpid() explicitly in primary_task for clarity.
-    signal(SIGCHLD, SIG_IGN);
-
     // SIGHUP: sent to all processes in a process group when the group becomes
     // orphaned (i.e. when our parent process dies). We ignore it so a promoted
     // backup survives its parent (the old primary) being killed.

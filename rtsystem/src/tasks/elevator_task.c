@@ -74,9 +74,9 @@ void write_elevator_state(void) {
 
     elevator_hardware_motor_direction_t safe_dirn = my_elevator.elevator_state.dirn;
     if (safe_dirn == DIRN_DOWN && my_elevator.elevator_state.floor == 0)
-        safe_dirn = DIRN_STOP;
+        safe_dirn =  DIRN_STOP;
     if (safe_dirn == DIRN_UP && my_elevator.elevator_state.floor == N_FLOORS - 1)
-        safe_dirn = DIRN_STOP;
+        safe_dirn =  DIRN_STOP;
     elevator_hardware_set_motor_direction(safe_dirn);
     elevator_hardware_set_door_open_lamp(my_elevator.elevator_state.behaviour == EB_DOOR_OPEN);
 

@@ -6,7 +6,7 @@
 
 // ============================================================
 // Section 1: requests
-// Ported from elev_algo/requests.c.
+// Ported from Project_resources/elev_algo/requests.c.
 //
 // Type mapping from elev_algo -> this file:
 //   Elevator              -> elevator_local_t
@@ -122,7 +122,7 @@ elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e) {
 
 // ============================================================
 // Section 2: hall_request_assigner
-// Ported from elev_algo/hall_request_assigner.c.
+// Ported from Project-resources/cost_fns/hall_request_assigner/
 //
 // Additional type mappings:
 //   SimState.e  Elevator -> elevator_local_t

@@ -5,10 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <limits.h>
-#include <errno.h>
 
 #include <rtsystem/rtsystem_config.h>
 #include <rtsystem/core/task_helper.h>
@@ -113,7 +111,6 @@ static int process_pair_primary_init(task_handle_t *self, void *init_arg) {
             .sin_port        = htons(g_process_pair_port),
         };
 
-        errno = 0;
         int fd = socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) {
             LOGE_ERRNO(TAG, "failed to initialize socket with error: ");
@@ -222,8 +219,6 @@ static void *process_pair_primary_entry(task_handle_t *self) {
 
         // Reap the dead backup so it does not become a zombie.
         // WNOHANG returns immediately: if backup already exited it is reaped now;
-        // if it somehow hasn't exited yet we move on and it will be reaped
-        // when SIG_IGN auto-reaps it (set in main()).
         if (backup_pid > 0) {
             waitpid(backup_pid, NULL, WNOHANG);
             backup_pid = -1;

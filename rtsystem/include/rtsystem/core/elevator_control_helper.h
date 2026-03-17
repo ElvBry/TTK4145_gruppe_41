@@ -16,11 +16,11 @@ typedef struct {
     elevator_behaviour_t behaviour;
 } dirn_behaviour_pair_t;
 
-dirn_behaviour_pair_t requests_chooseDirection(elevator_local_t e);
+dirn_behaviour_pair_t requests_chooseDirection(elevator_local_t e) __attribute__((pure));
 
-int requests_shouldStop(elevator_local_t e);
+int requests_shouldStop(elevator_local_t e) __attribute__((pure));
 
-elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e);
+elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e) __attribute__((pure));
 
 void assignHallRequests(
     elevator_local_t elevators[N_ELEVATORS],

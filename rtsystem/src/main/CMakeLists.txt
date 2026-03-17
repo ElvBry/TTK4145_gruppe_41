@@ -25,11 +25,3 @@ add_custom_target(setcap
     DEPENDS rtsystem
     COMMENT "Granting cap_sys_nice to rtsystem (allows SCHED_FIFO without sudo)"
 )
-
-# Send SIGINT to all running rtsystem processes for a graceful shutdown.
-# Useful after kill -9 on the primary leaves a promoted backup running.
-# Works from the same terminal: make -C build kill
-add_custom_target(kill
-    COMMAND pkill -2 -x rtsystem || true
-    COMMENT "Sending SIGINT to all rtsystem processes"
-)
