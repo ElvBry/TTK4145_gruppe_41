@@ -3,6 +3,7 @@
 #include "rtsystem/core/elevator_hardware.h"
 #include <limits.h>
 #include <string.h>
+#include <limits.h>
 
 
 // ============================================================
@@ -348,7 +349,8 @@ static void performSingleMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_
 // Assign active hall calls to elevators based on simulated travel cost.
 void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
                         int              hallRequests[N_FLOORS][N_HALL_BUTTONS],
-                        int              output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS]) {
+                        int              output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS],
+                        const bool       skip[N_ELEVATORS]) {
     // Build request tracking table from the input hall call matrix.
     SimReq reqs[N_FLOORS][N_HALL_BUTTONS];
     for (int f = 0; f < N_FLOORS; f++)
@@ -360,7 +362,7 @@ void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
     SimState states[N_ELEVATORS];
     for (int i = 0; i < N_ELEVATORS; i++) {
         states[i].e    = elevators[i];
-        states[i].time = i;
+        states[i].time = skip[i] ? INT_MAX / 2 : i;
         for (int f = 0; f < N_FLOORS; f++) {
             states[i].e.hall_requests[f][0] = 0;
             states[i].e.hall_requests[f][1] = 0;
