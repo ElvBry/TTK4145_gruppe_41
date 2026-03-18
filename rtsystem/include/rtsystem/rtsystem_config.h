@@ -55,7 +55,8 @@
 //   1->0: 20003   1->2: 20005
 //   2->0: 20006   2->1: 20007
 #define ELEVATOR_NET_BASE_PORT         24330
-#define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" }
+//#define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" } // for testing on own machine
+#define ELEVATOR_NET_IP_LIST           { "100.10.23.1", "100.10.23.2", "100.10.23.3" } // for testing on lab
 #define ELEVATOR_NET_MAX_LOSSES        8     // consecutive missed ticks before disconnect
 
 // Per-module log levels from log_helper.h or async_log_helper.h (only used for ease of development)
