@@ -3,6 +3,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/eventfd.h>
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 
 #include <rtsystem/tasks/process_pair_backup_task.h>
@@ -29,7 +34,94 @@ extern int g_shutdown_fd;
 static int backup_listen_fd = -1;
 static int backup_conn_fd   = -1;
 
-// TODO: change committed variable to be reading from and to a file instead
+// GN
+#define NPLEX           2
+#define BACKUP_STORE_ADDR 0ULL
+
+typedef struct {
+    uint64_t               stored_address;
+    uint64_t               version_id;
+    uint32_t               checksum;
+    uint8_t                status_bit;
+    uint8_t                _pad[3];
+    process_pair_message_t data;
+} store_block_t;
+
+static const char *g_store_paths[NPLEX] = {
+    "/tmp/rtsystem_pp_backup_0.dat",
+    "/tmp/rtsystem_pp_backup_1.dat",
+};
+static uint64_t g_store_version = 0;
+
+static uint32_t store_block_checksum(const store_block_t *b) {
+    return crc32(b, offsetof(store_block_t, checksum));
+}
+
+static bool store_write(int store_idx, uint64_t addr, const process_pair_message_t *value) {
+    store_block_t block = {
+        .stored_address = addr,
+        .version_id     = g_store_version,
+        .status_bit     = 1,
+        .data           = *value,
+    };
+    block.checksum = store_block_checksum(&block);
+
+    FILE *f = fopen(g_store_paths[store_idx], "rb+");
+    if (!f) return false;
+    bool ok = fwrite(&block, sizeof(block), 1, f) == 1;
+    fclose(f);
+    return ok;
+}
+
+static bool store_read(int store_idx, uint64_t addr, store_block_t *out) {
+    FILE *f = fopen(g_store_paths[store_idx], "rb");
+    if (!f) return false;
+    bool ok = fread(out, sizeof(*out), 1, f) == 1;
+    fclose(f);
+    if (!ok)                                      return false;
+    if (out->stored_address != addr)              return false;
+    if (out->status_bit     != 1)                 return false;
+    if (out->checksum != store_block_checksum(out)) return false;
+    return true;
+}
+
+static bool reliable_write(uint64_t addr, const process_pair_message_t *value) {
+    g_store_version++;
+    bool any_ok = false;
+    for (int i = 0; i < NPLEX; i++) {
+        if (store_write(i, addr, value))
+            any_ok = true;
+    }
+    return any_ok;
+}
+
+static bool reliable_read(uint64_t addr, process_pair_message_t *value) {
+    store_block_t blocks[NPLEX];
+    bool          valid[NPLEX];
+    int           best = -1;
+
+    for (int i = 0; i < NPLEX; i++) {
+        valid[i] = store_read(i, addr, &blocks[i]);
+        if (valid[i]) {
+            if (best < 0 || blocks[i].version_id > blocks[best].version_id)
+                best = i;
+        }
+    }
+
+    if (best < 0) return false;
+
+    *value = blocks[best].data;
+    g_store_version = blocks[best].version_id;
+
+    // Repair any bad copies by rewriting from the best copy
+    for (int i = 0; i < NPLEX; i++) {
+        if (!valid[i] || blocks[i].version_id < blocks[best].version_id)
+            store_write(i, addr, value);
+    }
+    return true;
+}
+// GN
+
 static process_pair_message_t committed;
 
 process_pair_message_t process_pair_backup_get_last_committed(void) {
@@ -74,7 +166,29 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
     }
     backup_listen_fd = fd;
 
-    // TODO: check if log file exists, otherwise create it
+    // GN
+    for (int i = 0; i < NPLEX; i++) {
+        FILE *f = fopen(g_store_paths[i], "rb");
+        if (f) {
+            fclose(f);
+        } else {
+            f = fopen(g_store_paths[i], "wb");
+            if (!f) {
+                LOGE(TAG, "failed to create store file %s", g_store_paths[i]);
+                close(backup_listen_fd);
+                backup_listen_fd = -1;
+                return -1;
+            }
+            fclose(f);
+        }
+    }
+    if (!reliable_read(BACKUP_STORE_ADDR, &committed)) {
+        LOGD(TAG, "no valid committed state on disk, starting fresh");
+        memset(&committed, 0, sizeof(committed));
+    } else {
+        LOGD(TAG, "restored committed state from disk");
+    }
+    // GN
     return 0;
 }
 
@@ -149,7 +263,9 @@ static void *process_pair_backup_entry(task_handle_t *self){
         }
 
         committed = message;
-        // TODO: write committed message to file with nplex and saferead and so on.
+        // GN
+        reliable_write(BACKUP_STORE_ADDR, &committed);
+        // GN
         send(backup_conn_fd, &committed, sizeof(committed), 0);
     }
 
