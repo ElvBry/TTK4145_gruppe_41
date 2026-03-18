@@ -1,7 +1,9 @@
 #include <rtsystem/core/elevator_control_helper.h>
 #include <rtsystem/rtsystem_config.h>
 #include "rtsystem/core/elevator_hardware.h"
+#include <limits.h>
 #include <string.h>
+#include <limits.h>
 
 
 // ============================================================
@@ -134,6 +136,7 @@ elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e) {
 // Cost constants (arbitrary units; only relative values matter)
 #define TRAVEL_TIME    2
 #define DOOR_OPEN_TIME 3
+#define SIM_TIME_BLOCKED (INT_MAX / 4)
 
 // Tracks one hall call: whether active and which elevator is assigned to it.
 typedef struct {
@@ -146,6 +149,24 @@ typedef struct {
     elevator_local_t e;
     int              time;
 } SimState;
+
+static int state_has_known_floor(const elevator_local_t *e) {
+    return e->state.floor >= 0 && e->state.floor < N_FLOORS;
+}
+
+static int state_is_active(const elevator_local_t *e) {
+    switch (e->state.behaviour) {
+    case EB_MOVING:
+        return e->state.dirn != DIRN_STOP &&
+               e->state.floor >= -1 &&
+               e->state.floor < N_FLOORS;
+    case EB_IDLE:
+    case EB_DOOR_OPEN:
+        return state_has_known_floor(e);
+    default:
+        return 0;
+    }
+}
 
 // Overwrite the hall slots in the elevator with the currently unassigned calls.
 // Called before every decision step so the elevator "sees" all available calls.
@@ -221,10 +242,13 @@ static void assignImmediate(SimReq reqs[N_FLOORS][N_HALL_BUTTONS], SimState stat
 
 // Returns the index of the elevator with the lowest accumulated time cost.
 static int lowestTimeIdx(SimState states[N_ELEVATORS]) {
-    int minIdx = 0;
-    for (int i = 1; i < N_ELEVATORS; i++)
-        if (states[i].time < states[minIdx].time)
+    int minIdx = -1;
+    for (int i = 0; i < N_ELEVATORS; i++) {
+        if (!state_is_active(&states[i].e))
+            continue;
+        if (minIdx < 0 || states[i].time < states[minIdx].time)
             minIdx = i;
+    }
     return minIdx;
 }
 
@@ -232,14 +256,19 @@ static int lowestTimeIdx(SimState states[N_ELEVATORS]) {
 // - Idle/DoorOpen: immediately take any hall calls at the current floor.
 // - Moving:        advance one floor at half travel cost (position within segment unknown).
 static void performInitialMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_HALL_BUTTONS]) {
+    if (s->time >= SIM_TIME_BLOCKED || !state_is_active(&s->e)) {
+        s->time = SIM_TIME_BLOCKED;
+        return;
+    }
+
     injectUnassignedHalls(&s->e, reqs);
-    int f = s->e.state.floor;
 
     switch (s->e.state.behaviour) {
     case EB_DOOR_OPEN:
         s->time += DOOR_OPEN_TIME / 2;
         /* fall through */
-    case EB_IDLE:
+    case EB_IDLE: {
+        int f = s->e.state.floor;
         for (int b = 0; b < N_HALL_BUTTONS; b++) {
             if (reqs[f][b].active && reqs[f][b].assignedTo < 0) {
                 reqs[f][b].assignedTo = elevIdx;
@@ -247,22 +276,36 @@ static void performInitialMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N
             }
         }
         break;
+    }
 
     case EB_MOVING:
-        s->e.state.floor += s->e.state.dirn;
-        s->time          += TRAVEL_TIME / 2;
+        // When the car is already on a floor sensor and would stop there in the
+        // next control step, simulate the stop instead of skipping past the floor.
+        if (state_has_known_floor(&s->e) && requests_shouldStop(s->e)) {
+            s->time += DOOR_OPEN_TIME;
+            sim_clearAndAssign(s, elevIdx, reqs);
+            s->e.state.behaviour = EB_DOOR_OPEN;
+        } else {
+            s->e.state.floor += s->e.state.dirn;
+            s->time          += TRAVEL_TIME / 2;
+        }
         break;
     }
 }
 
 // Advance one elevator one step: either stop and open doors, or move one floor.
 static void performSingleMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_HALL_BUTTONS]) {
+    if (!state_is_active(&s->e)) {
+        s->time = SIM_TIME_BLOCKED;
+        return;
+    }
+
     injectUnassignedHalls(&s->e, reqs);
 
     switch (s->e.state.behaviour) {
 
     case EB_MOVING:
-        if (requests_shouldStop(s->e)) {
+        if (state_has_known_floor(&s->e) && requests_shouldStop(s->e)) {
             s->time += DOOR_OPEN_TIME;
             sim_clearAndAssign(s, elevIdx, reqs);
             s->e.state.behaviour = EB_DOOR_OPEN;
@@ -274,6 +317,10 @@ static void performSingleMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_
 
     case EB_IDLE:
     case EB_DOOR_OPEN: {
+        if (!state_has_known_floor(&s->e)) {
+            s->time = SIM_TIME_BLOCKED;
+            break;
+        }
         dirn_behaviour_pair_t pair = requests_chooseDirection(s->e);
         s->e.state.dirn = pair.dirn;
 
@@ -302,19 +349,33 @@ static void performSingleMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_
 // Assign active hall calls to elevators based on simulated travel cost.
 void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
                         int              hallRequests[N_FLOORS][N_HALL_BUTTONS],
-                        int              output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS]) {
-    // Build request tracking table from the input hall call matrix.
+                        int              output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS],
+                        const bool       skip[N_ELEVATORS]) {
+    // Build request tracking table. Pre-seed existing assignments so the
+    // optimizer only runs for truly new requests. This prevents an already-
+    // assigned elevator from losing its request due to a tick-by-tick cost
+    // fluctuation (e.g. while the elevator is between floor sensors).
+    // A request is re-optimized if its elevator is in the skip set.
     SimReq reqs[N_FLOORS][N_HALL_BUTTONS];
-    for (int f = 0; f < N_FLOORS; f++)
-        for (int b = 0; b < N_HALL_BUTTONS; b++)
-            reqs[f][b] = (SimReq){ hallRequests[f][b], -1 };
+    for (int f = 0; f < N_FLOORS; f++) {
+        for (int b = 0; b < N_HALL_BUTTONS; b++) {
+            int pre_assigned = -1;
+            for (int i = 0; i < N_ELEVATORS; i++) {
+                if (!skip[i] && elevators[i].hall_requests[f][b]) {
+                    pre_assigned = i;
+                    break;
+                }
+            }
+            reqs[f][b] = (SimReq){ hallRequests[f][b], pre_assigned };
+        }
+    }
 
     // Copy elevator states into simulation. Hall slots are zeroed here and
     // injected fresh each step. Small time offset (i) breaks ties deterministically.
     SimState states[N_ELEVATORS];
     for (int i = 0; i < N_ELEVATORS; i++) {
         states[i].e    = elevators[i];
-        states[i].time = i;
+        states[i].time = skip[i] ? INT_MAX / 2 : i;
         for (int f = 0; f < N_FLOORS; f++) {
             states[i].e.hall_requests[f][0] = 0;
             states[i].e.hall_requests[f][1] = 0;
@@ -332,6 +393,8 @@ void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
             break;
         }
         int i = lowestTimeIdx(states);
+        if (i < 0)
+            break;
         performSingleMove(&states[i], i, reqs);
     }
 

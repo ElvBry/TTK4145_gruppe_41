@@ -57,6 +57,8 @@ int elevator_net_init(void) {
             LOGE_ERRNO(TAG, "socket() for send_fd (peer %d): ", id);
             goto fail;
         }
+        int broadcast = 1;
+        setsockopt(peer->send_fd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
         struct sockaddr_in dst = {
             .sin_family = AF_INET,
             .sin_port   = htons(net_port(g_elevator_id, id)),

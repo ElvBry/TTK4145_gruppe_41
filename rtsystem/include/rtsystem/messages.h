@@ -24,6 +24,7 @@ typedef struct {
     int8_t                              floor; // -1 for being in between floors/unknown
     elevator_hardware_motor_direction_t dirn;
     elevator_behaviour_t                behaviour;
+    bool                                obstructed;
     bool                                cab_requests[N_FLOORS];
 } elevator_state_t;
 

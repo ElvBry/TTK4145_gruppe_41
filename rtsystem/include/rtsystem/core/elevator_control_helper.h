@@ -25,7 +25,8 @@ elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e) __attribute__(
 void assignHallRequests(
     elevator_local_t elevators[N_ELEVATORS],
     int hallRequests[N_FLOORS][N_HALL_BUTTONS],
-    int output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS]
+    int output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS],
+    const bool skip[N_ELEVATORS]
 );
 
 #endif

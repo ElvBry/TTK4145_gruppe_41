@@ -43,14 +43,21 @@ void commit_snapshot(const elevator_local_t *local) {
 }
 
 void elevator_fsm_update(elevator_local_t *e) {
+    e->state.obstructed = elevator_hardware_get_obstruction_signal();
+
     if (e->state.behaviour == EB_IDLE) {
-        dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
-        if (pair.behaviour != EB_IDLE) {
-            e->state.dirn      = pair.dirn;
-            e->state.behaviour = pair.behaviour;
-            if (pair.behaviour == EB_DOOR_OPEN) {
-                *e = requests_clearAtCurrentFloor(*e);
-                door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+        if (e->state.obstructed && e->state.floor >= 0) {
+            e->state.behaviour = EB_DOOR_OPEN;
+            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+        } else {
+            dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
+            if (pair.behaviour != EB_IDLE) {
+                e->state.dirn      = pair.dirn;
+                e->state.behaviour = pair.behaviour;
+                if (pair.behaviour == EB_DOOR_OPEN) {
+                    *e = requests_clearAtCurrentFloor(*e);
+                    door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+                }
             }
         }
     }
@@ -66,10 +73,10 @@ void elevator_fsm_update(elevator_local_t *e) {
     }
 
     if (door_timer_ticks > 0) {
-        if (elevator_hardware_get_obstruction_signal())
+        if (e->state.obstructed)
             door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
         (door_timer_ticks)--;
-        if (door_timer_ticks == 0) {
+        if (door_timer_ticks == 0 && !e->state.obstructed) {
             *e = requests_clearAtCurrentFloor(*e);
             dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
             e->state.dirn      = pair.dirn;
