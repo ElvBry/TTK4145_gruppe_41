@@ -159,7 +159,7 @@ static bool all_peers_lost(void) {
 
 static void mark_served_requests(worldview_t *proposed, elevator_state_t own_state,
                                   bool own_assigned[N_FLOORS][N_HALL_BUTTONS]) {
-    if (own_state.behaviour == EB_DOOR_OPEN && own_state.floor >= 0) {
+    if (own_state.behaviour == EB_DOOR_OPEN && own_state.floor >= 0 && !own_state.obstructed) {
         int f = own_state.floor;
         for (int b = 0; b < N_HALL_BUTTONS; b++)
             if (own_assigned[f][b])
@@ -169,7 +169,7 @@ static void mark_served_requests(worldview_t *proposed, elevator_state_t own_sta
         if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES / 2) continue;
         int pid = g_peers[i].peer_id;
         elevator_state_t *ps = &peer_last_state[pid].state;
-        if (ps->behaviour == EB_DOOR_OPEN && ps->floor >= 0) {
+        if (ps->behaviour == EB_DOOR_OPEN && ps->floor >= 0 && !ps->obstructed) {
             int f = ps->floor;
             for (int b = 0; b < N_HALL_BUTTONS; b++)
                 if (peer_last_assignment[pid][f][b])
@@ -363,8 +363,15 @@ int elevator_logic_master(void) {
     elevator_local_t elev_array[N_ELEVATORS];
     build_elev_array(elev_array, own_state);
 
+    bool skip[N_ELEVATORS];
+    skip[g_elevator_id] = motorstop_detected[g_elevator_id] || own_state.obstructed;
+    for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        int pid = g_peers[i].peer_id;
+        skip[pid] = motorstop_detected[pid] || peer_last_state[pid].state.obstructed;
+    }
+
     int new_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
-    assignHallRequests(elev_array, hall_int, new_assignment, motorstop_detected);
+    assignHallRequests(elev_array, hall_int, new_assignment, skip);
 
     apply_new_assignments(new_assignment);
 

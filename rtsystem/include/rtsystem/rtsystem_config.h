@@ -54,7 +54,7 @@
 //   0->1: 20001   0->2: 20002
 //   1->0: 20003   1->2: 20005
 //   2->0: 20006   2->1: 20007
-#define ELEVATOR_NET_BASE_PORT         20000
+#define ELEVATOR_NET_BASE_PORT         24330
 #define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" }
 #define ELEVATOR_NET_MAX_LOSSES        8     // consecutive missed ticks before disconnect
 

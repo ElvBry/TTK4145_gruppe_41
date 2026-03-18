@@ -43,6 +43,8 @@ void commit_snapshot(const elevator_local_t *local) {
 }
 
 void elevator_fsm_update(elevator_local_t *e) {
+    e->state.obstructed = elevator_hardware_get_obstruction_signal();
+
     if (e->state.behaviour == EB_IDLE) {
         dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
         if (pair.behaviour != EB_IDLE) {
@@ -66,7 +68,7 @@ void elevator_fsm_update(elevator_local_t *e) {
     }
 
     if (door_timer_ticks > 0) {
-        if (elevator_hardware_get_obstruction_signal())
+        if (e->state.obstructed)
             door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
         (door_timer_ticks)--;
         if (door_timer_ticks == 0) {
