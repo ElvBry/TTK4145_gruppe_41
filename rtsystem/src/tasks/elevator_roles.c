@@ -264,10 +264,17 @@ int elevator_logic_master(void) {
 
     elevator_local_t elev_array[N_ELEVATORS];
     memset(elev_array, 0, sizeof(elev_array));
+    for (int i = 0; i < N_ELEVATORS; i++) {
+        elev_array[i].state.floor = -1;
+        elev_array[i].state.dirn = DIRN_STOP;
+        elev_array[i].state.behaviour = EB_IDLE;
+    }
     elev_array[g_elevator_id].state = own_state;
     memcpy(elev_array[g_elevator_id].hall_requests, my_elevator.assigned_halls,
            sizeof(elev_array[g_elevator_id].hall_requests));
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES)
+            continue;
         int pid = g_peers[i].peer_id;
         elev_array[pid].state = peer_last_state[pid].state;
         memcpy(elev_array[pid].hall_requests, peer_last_assignment[pid],
@@ -318,6 +325,9 @@ int elevator_logic_master(void) {
 }
 
 void elevator_roles_init_peer_state(void) {
-    for (int i = 0; i < N_ELEVATORS; i++)
+    for (int i = 0; i < N_ELEVATORS; i++) {
         peer_last_state[i].state.floor = -1;
+        peer_last_state[i].state.dirn = DIRN_STOP;
+        peer_last_state[i].state.behaviour = EB_IDLE;
+    }
 }
