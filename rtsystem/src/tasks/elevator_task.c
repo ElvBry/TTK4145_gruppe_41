@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 
@@ -140,15 +141,22 @@ static int elevator_init(task_handle_t *self, void *init_arg) {
     }
 
     LOGD(TAG, "elevator hardware initialized, running startup sequence");
-    // elevator_startup_sequence();
 
-    if (init_arg != NULL)
-        restore_state((const process_pair_message_t *)init_arg);
+    if (init_arg != NULL) {
+        self->task_resources = malloc(sizeof(process_pair_message_t));
+        if (self->task_resources == NULL) {
+            LOGE(TAG, "could not allocate memmory");
+            return -1;
+        }
+        memcpy(self->task_resources, init_arg, sizeof(process_pair_message_t));
+    }
 
     elevator_roles_init_peer_state();
 
     if (elevator_net_init() != 0) {
         LOGE(TAG, "failed to initialize elevator network");
+        free(self->task_resources);
+        self->task_resources = NULL;
         return -1;
     }
 
@@ -157,7 +165,8 @@ static int elevator_init(task_handle_t *self, void *init_arg) {
 }
 
 static void elevator_cleanup(task_handle_t *self) {
-    (void)self;
+    if (self->task_resources != NULL) 
+        free(self->task_resources);
     elevator_net_cleanup();
     pthread_mutex_destroy(&my_elevator.lock);
 }
@@ -165,6 +174,8 @@ static void elevator_cleanup(task_handle_t *self) {
 static void *elevator_entry(task_handle_t *self) {
     int tick = 0;
     elevator_startup_sequence();
+    if (self->task_resources != NULL)
+        restore_state((const process_pair_message_t *)self->task_resources);
 
     while (g_running && self->state != TASK_STATE_STOPPING) {
         read_update_cab_state();
