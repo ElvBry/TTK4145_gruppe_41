@@ -256,7 +256,7 @@ static int lowestTimeIdx(SimState states[N_ELEVATORS]) {
 // - Idle/DoorOpen: immediately take any hall calls at the current floor.
 // - Moving:        advance one floor at half travel cost (position within segment unknown).
 static void performInitialMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_HALL_BUTTONS]) {
-    if (!state_is_active(&s->e)) {
+    if (s->time >= SIM_TIME_BLOCKED || !state_is_active(&s->e)) {
         s->time = SIM_TIME_BLOCKED;
         return;
     }
@@ -351,11 +351,24 @@ void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
                         int              hallRequests[N_FLOORS][N_HALL_BUTTONS],
                         int              output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS],
                         const bool       skip[N_ELEVATORS]) {
-    // Build request tracking table from the input hall call matrix.
+    // Build request tracking table. Pre-seed existing assignments so the
+    // optimizer only runs for truly new requests. This prevents an already-
+    // assigned elevator from losing its request due to a tick-by-tick cost
+    // fluctuation (e.g. while the elevator is between floor sensors).
+    // A request is re-optimized if its elevator is in the skip set.
     SimReq reqs[N_FLOORS][N_HALL_BUTTONS];
-    for (int f = 0; f < N_FLOORS; f++)
-        for (int b = 0; b < N_HALL_BUTTONS; b++)
-            reqs[f][b] = (SimReq){ hallRequests[f][b], -1 };
+    for (int f = 0; f < N_FLOORS; f++) {
+        for (int b = 0; b < N_HALL_BUTTONS; b++) {
+            int pre_assigned = -1;
+            for (int i = 0; i < N_ELEVATORS; i++) {
+                if (!skip[i] && elevators[i].hall_requests[f][b]) {
+                    pre_assigned = i;
+                    break;
+                }
+            }
+            reqs[f][b] = (SimReq){ hallRequests[f][b], pre_assigned };
+        }
+    }
 
     // Copy elevator states into simulation. Hall slots are zeroed here and
     // injected fresh each step. Small time offset (i) breaks ties deterministically.
