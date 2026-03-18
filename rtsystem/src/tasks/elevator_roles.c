@@ -23,6 +23,9 @@ static int            master_peer_idx = -1;
 static net_slave_msg_t peer_last_state[N_ELEVATORS];
 static bool           peer_last_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
 
+static int  motorstop_ticks[N_ELEVATORS]    = {0};
+static bool motorstop_detected[N_ELEVATORS] = {false};
+
 static void read_update_hall_state(void) {
     static bool prev_hall[N_FLOORS][N_HALL_BUTTONS] = {0};
     pthread_mutex_lock(&my_elevator.lock);
@@ -152,9 +155,11 @@ int elevator_logic_master(void) {
 
     read_update_hall_state();
 
+    bool own_assigned[N_FLOORS][N_HALL_BUTTONS];
     pthread_mutex_lock(&my_elevator.lock);
     elevator_state_t own_state = my_elevator.elevator_state;
     worldview_t proposed       = my_elevator.worldview;
+    memcpy(own_assigned, my_elevator.assigned_halls, sizeof(own_assigned));
     for (int f = 0; f < N_FLOORS; f++)
         for (int b = 0; b < N_HALL_BUTTONS; b++)
             proposed.hall_requests[f][b] |= my_elevator.detected_hall_calls[f][b];
@@ -201,16 +206,46 @@ int elevator_logic_master(void) {
         return 0;
     }
 
+    // Motor stop detection: elevator stuck in EB_MOVING with floor == -1 for too long.
+    // Counter resets whenever the elevator hits a floor sensor or stops moving.
+    if (own_state.behaviour == EB_MOVING && own_state.floor == -1) {
+        if (++motorstop_ticks[g_elevator_id] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[g_elevator_id]) {
+            motorstop_detected[g_elevator_id] = true;
+            LOGW(TAG, "motor stop detected on own elevator (id=%d)", g_elevator_id);
+        }
+    } else {
+        motorstop_ticks[g_elevator_id] = 0;
+        motorstop_detected[g_elevator_id] = false;
+    }
+    for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        int pid = g_peers[i].peer_id;
+        elevator_state_t *ps = &peer_last_state[pid].state;
+        if (ps->behaviour == EB_MOVING && ps->floor == -1) {
+            if (++motorstop_ticks[pid] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[pid]) {
+                motorstop_detected[pid] = true;
+                LOGW(TAG, "motor stop detected on peer elevator (id=%d)", pid);
+            }
+        } else {
+            motorstop_ticks[pid] = 0;
+            motorstop_detected[pid] = false;
+        }
+    }
+
     if (own_state.behaviour == EB_DOOR_OPEN && own_state.floor >= 0) {
-        proposed.hall_requests[own_state.floor][0] = false;
-        proposed.hall_requests[own_state.floor][1] = false;
+        int f = own_state.floor;
+        for (int b = 0; b < N_HALL_BUTTONS; b++)
+            if (own_assigned[f][b])
+                proposed.hall_requests[f][b] = false;
     }
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
         if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES / 2) continue;
-        elevator_state_t *ps = &peer_last_state[g_peers[i].peer_id].state;
+        int pid = g_peers[i].peer_id;
+        elevator_state_t *ps = &peer_last_state[pid].state;
         if (ps->behaviour == EB_DOOR_OPEN && ps->floor >= 0) {
-            proposed.hall_requests[ps->floor][0] = false;
-            proposed.hall_requests[ps->floor][1] = false;
+            int f = ps->floor;
+            for (int b = 0; b < N_HALL_BUTTONS; b++)
+                if (peer_last_assignment[pid][f][b])
+                    proposed.hall_requests[f][b] = false;
         }
     }
 
@@ -247,17 +282,23 @@ int elevator_logic_master(void) {
     int new_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
     assignHallRequests(elev_array, hall_int, new_assignment);
 
-    for (int f = 0; f < N_FLOORS; f++)
-        for (int b = 0; b < N_HALL_BUTTONS; b++)
-            my_elevator.assigned_halls[f][b] = (new_assignment[g_elevator_id][f][b] != 0);
+    if (motorstop_detected[g_elevator_id])
+        memset(my_elevator.assigned_halls, 0, sizeof(my_elevator.assigned_halls));
+    else
+        for (int f = 0; f < N_FLOORS; f++)
+            for (int b = 0; b < N_HALL_BUTTONS; b++)
+                my_elevator.assigned_halls[f][b] = (new_assignment[g_elevator_id][f][b] != 0);
 
     pthread_mutex_unlock(&my_elevator.lock);
 
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
         int pid = g_peers[i].peer_id;
-        for (int f = 0; f < N_FLOORS; f++)
-            for (int b = 0; b < N_HALL_BUTTONS; b++)
-                peer_last_assignment[pid][f][b] = (new_assignment[pid][f][b] != 0);
+        if (motorstop_detected[pid])
+            memset(peer_last_assignment[pid], 0, sizeof(peer_last_assignment[pid]));
+        else
+            for (int f = 0; f < N_FLOORS; f++)
+                for (int b = 0; b < N_HALL_BUTTONS; b++)
+                    peer_last_assignment[pid][f][b] = (new_assignment[pid][f][b] != 0);
     }
 
     pthread_mutex_lock(&my_elevator.lock);
