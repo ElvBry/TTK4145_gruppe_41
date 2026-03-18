@@ -35,15 +35,13 @@ static int backup_listen_fd = -1;
 static int backup_conn_fd   = -1;
 
 // GN
-#define NPLEX           2
-#define BACKUP_STORE_ADDR 0ULL
+#define NPLEX 2
 
+// Only data stored on disk: crc32 (covers seq+data), seq, and the message.
+// crc32 is first so that {seq, data} form a contiguous region for checksum.
 typedef struct {
-    uint64_t               stored_address;
-    uint64_t               version_id;
-    uint32_t               checksum;
-    uint8_t                status_bit;
-    uint8_t                _pad[3];
+    uint32_t               crc32;
+    uint32_t               seq;
     process_pair_message_t data;
 } store_block_t;
 
@@ -51,73 +49,62 @@ static const char *g_store_paths[NPLEX] = {
     "/tmp/rtsystem_pp_backup_0.dat",
     "/tmp/rtsystem_pp_backup_1.dat",
 };
-static uint64_t g_store_version = 0;
+static uint32_t g_seq = 0;
 
 static uint32_t store_block_checksum(const store_block_t *b) {
-    return crc32(b, offsetof(store_block_t, checksum));
+    // Covers the contiguous {seq, data} region that follows crc32
+    return crc32(&b->seq, sizeof(b->seq) + sizeof(b->data));
 }
 
-static bool store_write(int store_idx, uint64_t addr, const process_pair_message_t *value) {
-    store_block_t block = {
-        .stored_address = addr,
-        .version_id     = g_store_version,
-        .status_bit     = 1,
-        .data           = *value,
-    };
-    block.checksum = store_block_checksum(&block);
+// Write to exactly one file, open then close. Never more than one file open.
+static bool store_write(int idx, const process_pair_message_t *value) {
+    store_block_t block;
+    block.seq  = g_seq;
+    block.data = *value;
+    block.crc32 = store_block_checksum(&block);
 
-    FILE *f = fopen(g_store_paths[store_idx], "rb+");
+    FILE *f = fopen(g_store_paths[idx], "rb+");
     if (!f) return false;
     bool ok = fwrite(&block, sizeof(block), 1, f) == 1;
     fclose(f);
     return ok;
 }
 
-static bool store_read(int store_idx, uint64_t addr, store_block_t *out) {
-    FILE *f = fopen(g_store_paths[store_idx], "rb");
+// Read from exactly one file, open then close. Never more than one file open.
+static bool store_read(int idx, store_block_t *out) {
+    FILE *f = fopen(g_store_paths[idx], "rb");
     if (!f) return false;
     bool ok = fread(out, sizeof(*out), 1, f) == 1;
     fclose(f);
-    if (!ok)                                      return false;
-    if (out->stored_address != addr)              return false;
-    if (out->status_bit     != 1)                 return false;
-    if (out->checksum != store_block_checksum(out)) return false;
+    if (!ok) return false;
+    if (out->crc32 != store_block_checksum(out)) return false;
     return true;
 }
 
-static bool reliable_write(uint64_t addr, const process_pair_message_t *value) {
-    g_store_version++;
-    bool any_ok = false;
-    for (int i = 0; i < NPLEX; i++) {
-        if (store_write(i, addr, value))
-            any_ok = true;
-    }
-    return any_ok;
+// Round-robin: write only to file[g_seq % NPLEX], then advance seq.
+// A crash mid-write corrupts only that one file; the previous file is intact.
+static bool reliable_write(const process_pair_message_t *value) {
+    bool ok = store_write(g_seq % NPLEX, value);
+    g_seq++;
+    return ok;
 }
 
-static bool reliable_read(uint64_t addr, process_pair_message_t *value) {
+// Read all files one at a time. Use seq as tiebreaker among valid copies.
+static bool reliable_read(process_pair_message_t *value) {
     store_block_t blocks[NPLEX];
     bool          valid[NPLEX];
     int           best = -1;
 
     for (int i = 0; i < NPLEX; i++) {
-        valid[i] = store_read(i, addr, &blocks[i]);
-        if (valid[i]) {
-            if (best < 0 || blocks[i].version_id > blocks[best].version_id)
-                best = i;
-        }
+        valid[i] = store_read(i, &blocks[i]);
+        if (valid[i] && (best < 0 || blocks[i].seq > blocks[best].seq))
+            best = i;
     }
 
     if (best < 0) return false;
 
     *value = blocks[best].data;
-    g_store_version = blocks[best].version_id;
-
-    // Repair any bad copies by rewriting from the best copy
-    for (int i = 0; i < NPLEX; i++) {
-        if (!valid[i] || blocks[i].version_id < blocks[best].version_id)
-            store_write(i, addr, value);
-    }
+    g_seq  = blocks[best].seq + 1;
     return true;
 }
 // GN
@@ -182,7 +169,7 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
             fclose(f);
         }
     }
-    if (!reliable_read(BACKUP_STORE_ADDR, &committed)) {
+    if (!reliable_read(&committed)) {
         LOGD(TAG, "no valid committed state on disk, starting fresh");
         memset(&committed, 0, sizeof(committed));
     } else {
@@ -264,7 +251,7 @@ static void *process_pair_backup_entry(task_handle_t *self){
 
         committed = message;
         // GN
-        reliable_write(BACKUP_STORE_ADDR, &committed);
+        reliable_write(&committed);
         // GN
         send(backup_conn_fd, &committed, sizeof(committed), 0);
     }
