@@ -32,6 +32,7 @@
 
 #define ELEVATOR_TASK_HEARTBEAT_MS 50
 #define ELEVATOR_DOOR_OPEN_TICKS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
+#define ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS (3000/ ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds, approximate time to move between floors (still works if miscalculated)
 
 // Ports and IP used for sockets (elevator_hardware and process pair uses TCP).
 // Elevator 0: hw=1567, pp=8081 | Elevator 1: hw=1568, pp=8082 | etc.

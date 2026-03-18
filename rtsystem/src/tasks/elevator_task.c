@@ -43,15 +43,32 @@ static void restore_state(const process_pair_message_t *committed) {
 }
 
 static void elevator_startup_sequence(void) {
-    int8_t current_floor = -1;
-    while (current_floor == -1) {
-        pthread_mutex_lock(&my_elevator.lock);
-        my_elevator.elevator_state.behaviour = EB_MOVING;
-        pthread_mutex_unlock(&my_elevator.lock);
-        elevator_hardware_set_motor_direction(DIRN_DOWN);
-        usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
-        current_floor = elevator_hardware_get_floor_sensor_signal();
+    int8_t current_floor = elevator_hardware_get_floor_sensor_signal();
+    // ensure that the elevator does not get stuck in one direction or in a loop between two floors
+    int64_t movement_factor = 1; 
+    while (current_floor == -1 && g_running) {
+        for (int i = 0; i < movement_factor * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS && current_floor == -1; i++) {
+            if (!g_running) return;
+            pthread_mutex_lock(&my_elevator.lock);
+            my_elevator.elevator_state.behaviour = EB_MOVING;
+            pthread_mutex_unlock(&my_elevator.lock);
+            elevator_hardware_set_motor_direction(DIRN_DOWN);
+            usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
+            current_floor = elevator_hardware_get_floor_sensor_signal();
+        }
+
+        for (int i = 0; i < movement_factor * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS && current_floor == -1; i++) {
+            if (!g_running) return;
+            pthread_mutex_lock(&my_elevator.lock);
+            my_elevator.elevator_state.behaviour = EB_MOVING;
+            pthread_mutex_unlock(&my_elevator.lock);
+            elevator_hardware_set_motor_direction(DIRN_UP);
+            usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
+            current_floor = elevator_hardware_get_floor_sensor_signal();
+        }
+        movement_factor++;
     }
+    if (!g_running) return;
     pthread_mutex_lock(&my_elevator.lock);
     my_elevator.elevator_state.floor     = current_floor;
     my_elevator.elevator_state.dirn      = DIRN_STOP;
@@ -123,7 +140,7 @@ static int elevator_init(task_handle_t *self, void *init_arg) {
     }
 
     LOGD(TAG, "elevator hardware initialized, running startup sequence");
-    elevator_startup_sequence();
+    // elevator_startup_sequence();
 
     if (init_arg != NULL)
         restore_state((const process_pair_message_t *)init_arg);
@@ -147,6 +164,7 @@ static void elevator_cleanup(task_handle_t *self) {
 
 static void *elevator_entry(task_handle_t *self) {
     int tick = 0;
+    elevator_startup_sequence();
 
     while (g_running && self->state != TASK_STATE_STOPPING) {
         read_update_cab_state();
