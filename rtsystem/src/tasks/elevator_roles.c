@@ -371,6 +371,9 @@ int elevator_logic_disconnected(void) {
         }
         if (!valid) continue;
 
+        // Only reset losses for peers that actually responded — dead peers keep
+        // their high count so the new master marks them as skip[] immediately.
+        g_peers[i].consecutive_losses = 0;
         heard = true;
         if (g_peers[i].peer_id > g_elevator_id) {
             if (best_master_idx < 0 ||
@@ -380,9 +383,6 @@ int elevator_logic_disconnected(void) {
     }
 
     if (!heard) return 0;
-
-    for (int i = 0; i < N_ELEVATORS - 1; i++)
-        g_peers[i].consecutive_losses = 0;
 
     if (best_master_idx >= 0) {
         elevator_role   = SLAVE;
