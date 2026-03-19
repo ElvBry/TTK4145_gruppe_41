@@ -20,11 +20,11 @@ static const char *TAG = "elevator_roles";
 elevator_role_t elevator_role = DISCONNECTED;
 
 static int             master_peer_idx = -1;
-static net_slave_msg_t peer_last_state[N_ELEVATORS];
-static bool            peer_last_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
+net_slave_msg_t peer_last_state[N_ELEVATORS];
+static bool     peer_last_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
 
-static int     motorstop_ticks[N_ELEVATORS]    = {0};
-static bool    motorstop_detected[N_ELEVATORS] = {false};
+static int  motorstop_ticks[N_ELEVATORS]    = {0};
+bool        motorstop_detected[N_ELEVATORS] = {false};
 static int64_t peer_acked_counter[N_ELEVATORS] = {0};
 
 // ----------------------------------------------------------------
@@ -120,6 +120,39 @@ static void apply_master_reply(net_master_msg_t *in) {
         clear_detected_calls_for_known_requests();
 }
 
+#if PARTITION_POSSIBLE
+// Send our state to every non-master peer with a higher ID and check for a master reply.
+// If one replies, we were in a partition and should switch to the higher-ID master immediately.
+// Returns true if a new master was found and applied.
+static bool probe_for_higher_master(void) {
+    net_slave_msg_t probe = {0};
+    pthread_mutex_lock(&my_elevator.lock);
+    probe.state = my_elevator.elevator_state;
+    memcpy(probe.detected_hall_calls, my_elevator.detected_hall_calls,
+           sizeof(probe.detected_hall_calls));
+    probe.worldview = my_elevator.worldview;
+    pthread_mutex_unlock(&my_elevator.lock);
+    probe.crc = net_slave_msg_checksum(&probe);
+
+    for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        if (i == master_peer_idx) continue;
+        if (g_peers[i].peer_id <= g_peers[master_peer_idx].peer_id) continue;
+        elevator_net_send(i, &probe, sizeof(probe));
+        net_master_msg_t reply;
+        if (elevator_net_recv_latest(i, &reply, sizeof(reply)) == 1 &&
+            reply.crc == net_master_msg_checksum(&reply)) {
+            LOGD(TAG, "peer %d (higher ID) replied as master, switching from peer %d",
+                 g_peers[i].peer_id, g_peers[master_peer_idx].peer_id);
+            master_peer_idx = i;
+            g_peers[i].consecutive_losses = 0;
+            apply_master_reply(&reply);
+            return true;
+        }
+    }
+    return false;
+}
+#endif
+
 // ----------------------------------------------------------------
 // Master helpers
 // ----------------------------------------------------------------
@@ -149,15 +182,34 @@ static bool collect_peer_states(worldview_t *proposed, bool responded[N_ELEVATOR
             return true;
         }
 
-        for (int f = 0; f < N_FLOORS; f++) {
+        bool higher = (in.worldview.worldview_counter > proposed->worldview_counter);
+
+#if PARTITION_POSSIBLE
+        if (higher && in.worldview.master_id != proposed->master_id) {
+            *proposed = in.worldview;
+            for (int f = 0; f < N_FLOORS; f++)
+                for (int b = 0; b < N_HALL_BUTTONS; b++)
+                    proposed->hall_requests[f][b] |= in.detected_hall_calls[f][b];
+        } else {
+            if (higher)
+                proposed->worldview_counter = in.worldview.worldview_counter;
+            for (int f = 0; f < N_FLOORS; f++)
+                for (int b = 0; b < N_HALL_BUTTONS; b++) {
+                    proposed->hall_requests[f][b] |= in.detected_hall_calls[f][b];
+                    if (in.worldview.worldview_counter >= proposed->worldview_counter)
+                        proposed->hall_requests[f][b] |= in.worldview.hall_requests[f][b];
+                }
+        }
+#else
+        if (higher)
+            proposed->worldview_counter = in.worldview.worldview_counter;
+        for (int f = 0; f < N_FLOORS; f++)
             for (int b = 0; b < N_HALL_BUTTONS; b++) {
                 proposed->hall_requests[f][b] |= in.detected_hall_calls[f][b];
-                // Merge peer worldview if at least as up-to-date as ours:
-                // recovers requests committed by a previous master that we missed.
                 if (in.worldview.worldview_counter >= proposed->worldview_counter)
                     proposed->hall_requests[f][b] |= in.worldview.hall_requests[f][b];
             }
-        }
+#endif
     }
     return false;
 }
@@ -201,11 +253,25 @@ static bool commit_worldview(worldview_t proposed, int hall_out[N_FLOORS][N_HALL
     pthread_mutex_lock(&my_elevator.lock);
     changed = memcmp(proposed.hall_requests, my_elevator.worldview.hall_requests,
                      sizeof(proposed.hall_requests)) != 0;
+#if PARTITION_POSSIBLE
+    bool owner_changed = (my_elevator.worldview.master_id != (int8_t)g_elevator_id);
+    if (changed || owner_changed) {
+        // Use max(ours, proposed) + 1 so all slaves accept the counter after a partition heal.
+        int64_t base = my_elevator.worldview.worldview_counter;
+        if (proposed.worldview_counter > base) base = proposed.worldview_counter;
+        my_elevator.worldview.worldview_counter = base + 1;
+        if (changed)
+            memcpy(my_elevator.worldview.hall_requests, proposed.hall_requests,
+                   sizeof(my_elevator.worldview.hall_requests));
+        my_elevator.worldview.master_id = (int8_t)g_elevator_id;
+    }
+#else
     if (changed) {
         my_elevator.worldview.worldview_counter++;
         memcpy(my_elevator.worldview.hall_requests, proposed.hall_requests,
                sizeof(my_elevator.worldview.hall_requests));
     }
+#endif
     for (int f = 0; f < N_FLOORS; f++)
         for (int b = 0; b < N_HALL_BUTTONS; b++)
             hall_out[f][b] = my_elevator.worldview.hall_requests[f][b] ? 1 : 0;
@@ -336,6 +402,11 @@ int elevator_logic_slave(void) {
     }
 
     read_update_hall_state();
+
+#if PARTITION_POSSIBLE
+    if (probe_for_higher_master()) return 0;
+#endif
+
     send_state_to_master();
 
     net_master_msg_t in;
@@ -367,6 +438,9 @@ int elevator_logic_master(void) {
     pthread_mutex_lock(&my_elevator.lock);
     elevator_state_t own_state = my_elevator.elevator_state;
     worldview_t proposed       = my_elevator.worldview;
+#if PARTITION_POSSIBLE
+    proposed.master_id         = (int8_t)g_elevator_id;
+#endif
     memcpy(own_assigned, my_elevator.assigned_halls, sizeof(own_assigned));
     for (int f = 0; f < N_FLOORS; f++)
         for (int b = 0; b < N_HALL_BUTTONS; b++)

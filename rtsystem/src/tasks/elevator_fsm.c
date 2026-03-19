@@ -1,5 +1,6 @@
 #include <pthread.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "rtsystem/tasks/elevator_task.h"
 #include "rtsystem/tasks/elevator_fsm.h"
@@ -108,24 +109,54 @@ static const char *dirn_str(elevator_hardware_motor_direction_t d) {
 
 void log_elevator_state(const elevator_local_t *e) {
     static const char *role_names[] = { "DISC", "SLAV", "MSTR" };
-    int peers = 0;
-    for (int i = 0; i < N_ELEVATORS - 1; i++)
-        if (g_peers[i].consecutive_losses <= ELEVATOR_NET_MAX_LOSSES) peers++;
 
     char cab[N_FLOORS + 1];
     for (int f = 0; f < N_FLOORS; f++)
         cab[f] = e->state.cab_requests[f] ? '1' : '0';
     cab[N_FLOORS] = '\0';
 
+    bool wv_hall[N_FLOORS][N_HALL_BUTTONS];
+    pthread_mutex_lock(&my_elevator.lock);
+    memcpy(wv_hall, my_elevator.worldview.hall_requests, sizeof(wv_hall));
+    pthread_mutex_unlock(&my_elevator.lock);
+
     char hall[N_FLOORS * N_HALL_BUTTONS + 1];
     for (int f = 0; f < N_FLOORS; f++) {
-        hall[f * N_HALL_BUTTONS + 0] = e->hall_requests[f][0] ? 'U' : '-';
-        hall[f * N_HALL_BUTTONS + 1] = e->hall_requests[f][1] ? 'D' : '-';
+        hall[f * N_HALL_BUTTONS + 0] = wv_hall[f][0] ? 'U' : '-';
+        hall[f * N_HALL_BUTTONS + 1] = wv_hall[f][1] ? 'D' : '-';
     }
     hall[N_FLOORS * N_HALL_BUTTONS] = '\0';
 
-    LOGD(TAG, "%-4s(p=%d) f=%-2d %s/%-4s cab=%s hall=%s",
-         role_names[elevator_role], peers, e->state.floor,
-         dirn_str(e->state.dirn), behaviour_str(e->state.behaviour),
-         cab, hall);
+    if (elevator_role == MASTER) {
+        int peers = 0;
+        for (int i = 0; i < N_ELEVATORS - 1; i++)
+            if (g_peers[i].consecutive_losses <= ELEVATOR_NET_MAX_LOSSES) peers++;
+
+        // Build peer status string: " | p1:f=2 ^/MOVE" per peer
+        char peer_buf[128] = {0};
+        int  pos = 0;
+        static const char *bnames[] = { "IDLE", "MOVE", "DOOR" };
+        for (int i = 0; i < N_ELEVATORS - 1; i++) {
+            int              pid  = g_peers[i].peer_id;
+            bool             lost = g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES;
+            elevator_state_t *s  = &peer_last_state[pid].state;
+            const char *b = (s->behaviour <= EB_DOOR_OPEN) ? bnames[s->behaviour] : "?";
+            const char *d = (s->dirn == DIRN_UP) ? "^" : (s->dirn == DIRN_DOWN ? "v" : "-");
+            pos += snprintf(peer_buf + pos, sizeof(peer_buf) - pos,
+                            " | p%d:f=%d %s/%s%s%s%s", pid, s->floor, d, b,
+                            s->obstructed          ? " OBS"   : "",
+                            motorstop_detected[pid] ? " MSTOP" : "",
+                            lost                   ? " LOST"  : "");
+        }
+
+        LOGD(TAG, "%s[%d](p=%d) f=%-2d %s/%-4s cab=%s wv=%s%s",
+             role_names[elevator_role], g_elevator_id, peers, e->state.floor,
+             dirn_str(e->state.dirn), behaviour_str(e->state.behaviour),
+             cab, hall, peer_buf);
+    } else {
+        LOGD(TAG, "%s[%d] f=%-2d %s/%-4s cab=%s wv=%s",
+             role_names[elevator_role], g_elevator_id, e->state.floor,
+             dirn_str(e->state.dirn), behaviour_str(e->state.behaviour),
+             cab, hall);
+    }
 }

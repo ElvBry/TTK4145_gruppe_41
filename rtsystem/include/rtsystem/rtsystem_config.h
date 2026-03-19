@@ -47,6 +47,11 @@
 #define N_BUTTONS   3
 #define N_ELEVATORS 3
 
+// With 4+ elevators a network partition can create two masters with independent counters.
+// When PARTITION_POSSIBLE, worldviews from different masters are combined on reconnect,
+// with the risk of re-performing an already served call.
+#define PARTITION_POSSIBLE (N_ELEVATORS >= 4)
+
 // UDP inter-elevator networking.
 //
 // Port assignment: PORT(sender, receiver) = BASE + sender * N_ELEVATORS + receiver

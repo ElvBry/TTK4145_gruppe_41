@@ -28,10 +28,14 @@ typedef struct {
     bool                                cab_requests[N_FLOORS];
 } elevator_state_t;
 
-// worldview shared and updated by all elevators in network
+// worldview shared by all elevators in a given network
+// master updates worldview and sends to its slaves
+// master updates own worldview if it was received by a slave
 // worldview with highest counter should be accepted
+// if partition is possible, master will merge worldview if it comes from other master
 typedef struct {
     int64_t worldview_counter;
+    int8_t  master_id;
     bool    hall_requests[N_FLOORS][N_HALL_BUTTONS];
 } worldview_t;
 
