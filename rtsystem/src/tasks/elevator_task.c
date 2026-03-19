@@ -195,14 +195,18 @@ static void *elevator_entry(task_handle_t *self) {
             continue;
         }
 
-        switch (elevator_role) {
-            case DISCONNECTED: elevator_logic_disconnected(); break;
-            case SLAVE:        elevator_logic_slave();        break;
-            case MASTER:       elevator_logic_master();       break;
-            default:
-                LOGE(TAG, "unhandled role: %d", elevator_role);
-                elevator_role = DISCONNECTED;
-                break;
+        if (N_ELEVATORS == 1) {
+            elevator_logic_single();
+        } else {
+            switch (elevator_role) {
+                case DISCONNECTED: elevator_logic_disconnected(); break;
+                case SLAVE:        elevator_logic_slave();        break;
+                case MASTER:       elevator_logic_master();       break;
+                default:
+                    LOGE(TAG, "unhandled role: %d", elevator_role);
+                    elevator_role = DISCONNECTED;
+                    break;
+            }
         }
 
         elevator_local_t local = take_snapshot();

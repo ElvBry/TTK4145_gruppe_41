@@ -32,12 +32,10 @@ void commit_snapshot(const elevator_local_t *local) {
     pthread_mutex_lock(&my_elevator.lock);
     my_elevator.elevator_state = local->state;
     if (N_ELEVATORS == 1) {
-        for (int f = 0; f < N_FLOORS; f++)
-            for (int b = 0; b < N_HALL_BUTTONS; b++)
-                my_elevator.worldview.hall_requests[f][b] |= my_elevator.detected_hall_calls[f][b];
-        my_elevator.worldview.worldview_counter++;
-        memset(my_elevator.detected_hall_calls, 0, sizeof(my_elevator.detected_hall_calls));
-        memcpy(my_elevator.assigned_halls, local->hall_requests, sizeof(my_elevator.assigned_halls));
+        memcpy(my_elevator.assigned_halls, local->hall_requests,
+               sizeof(my_elevator.assigned_halls));
+        memcpy(my_elevator.worldview.hall_requests, local->hall_requests,
+               sizeof(my_elevator.worldview.hall_requests));
     }
     pthread_mutex_unlock(&my_elevator.lock);
 }

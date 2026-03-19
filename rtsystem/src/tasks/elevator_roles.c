@@ -266,6 +266,20 @@ static void broadcast_assignments_to_peers(worldview_t wv, bool responded[N_ELEV
 // Role logic
 // ----------------------------------------------------------------
 
+int elevator_logic_single(void) {
+    read_update_hall_state();
+    pthread_mutex_lock(&my_elevator.lock);
+    for (int f = 0; f < N_FLOORS; f++)
+        for (int b = 0; b < N_HALL_BUTTONS; b++)
+            if (my_elevator.detected_hall_calls[f][b]) {
+                my_elevator.assigned_halls[f][b]          = true;
+                my_elevator.worldview.hall_requests[f][b] = true;
+                my_elevator.detected_hall_calls[f][b]     = false;
+            }
+    pthread_mutex_unlock(&my_elevator.lock);
+    return 0;
+}
+
 int elevator_logic_disconnected(void) {
     if (elevator_role != DISCONNECTED) {
         LOGE(TAG, "ERROR: inside disconnected logic without being disconnected");

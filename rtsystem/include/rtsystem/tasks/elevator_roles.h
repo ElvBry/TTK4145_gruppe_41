@@ -11,6 +11,7 @@ extern elevator_role_t elevator_role;
 
 void elevator_roles_init_peer_state(void);
 
+int elevator_logic_single(void);
 int elevator_logic_disconnected(void);
 int elevator_logic_slave(void);
 int elevator_logic_master(void);
