@@ -370,11 +370,11 @@ void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
     }
 
     // Copy elevator states into simulation. Hall slots are zeroed here and
-    // injected fresh each step. Small time offset (i) breaks ties deterministically.
+    // injected fresh each step.
     SimState states[N_ELEVATORS];
     for (int i = 0; i < N_ELEVATORS; i++) {
         states[i].e    = elevators[i];
-        states[i].time = skip[i] ? INT_MAX / 2 : i;
+        states[i].time = skip[i] ? INT_MAX / 2 : 0;
         for (int f = 0; f < N_FLOORS; f++) {
             states[i].e.hall_requests[f][0] = 0;
             states[i].e.hall_requests[f][1] = 0;
