@@ -34,7 +34,6 @@ extern int g_shutdown_fd;
 static int backup_listen_fd = -1;
 static int backup_conn_fd   = -1;
 
-// GN
 #define NPLEX 2
 
 // Only data stored on disk: crc32 (covers seq+data), seq, and the message.
@@ -52,7 +51,6 @@ static const char *g_store_paths[NPLEX] = {
 static uint32_t g_seq = 0;
 
 static uint32_t store_block_checksum(const store_block_t *b) {
-    // Covers the contiguous {seq, data} region that follows crc32
     return crc32(&b->seq, sizeof(b->seq) + sizeof(b->data));
 }
 
@@ -107,7 +105,6 @@ static bool reliable_read(process_pair_message_t *value) {
     g_seq  = blocks[best].seq + 1;
     return true;
 }
-// GN
 
 static process_pair_message_t committed;
 
@@ -153,7 +150,6 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
     }
     backup_listen_fd = fd;
 
-    // GN
     for (int i = 0; i < NPLEX; i++) {
         FILE *f = fopen(g_store_paths[i], "rb");
         if (f) {
@@ -172,10 +168,7 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
     if (!reliable_read(&committed)) {
         LOGD(TAG, "no valid committed state on disk, starting fresh");
         memset(&committed, 0, sizeof(committed));
-    } else {
-        LOGD(TAG, "restored committed state from disk");
-    }
-    // GN
+    } else LOGD(TAG, "restored committed state from disk");
     return 0;
 }
 
@@ -250,9 +243,7 @@ static void *process_pair_backup_entry(task_handle_t *self){
         }
 
         committed = message;
-        // GN
         reliable_write(&committed);
-        // GN
         send(backup_conn_fd, &committed, sizeof(committed), 0);
     }
 

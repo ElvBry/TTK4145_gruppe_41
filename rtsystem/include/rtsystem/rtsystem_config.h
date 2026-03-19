@@ -33,7 +33,7 @@
 #define ELEVATOR_TASK_HEARTBEAT_MS 50
 #define ELEVATOR_DOOR_OPEN_TICKS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
 #define ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS (3000/ ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds, approximate time to move between floors (still works if miscalculated)
-#define TICKS_BEFORE_MOTORSTOP (10000 / ELEVATOR_TASK_HEARTBEAT_MS) // 10 seconds without hitting a floor sensor → motor considered stuck
+#define TICKS_BEFORE_MOTORSTOP (4000 / ELEVATOR_TASK_HEARTBEAT_MS) // 4 seconds without hitting a floor sensor → motor considered stuck
 
 // Ports and IP used for sockets (elevator_hardware and process pair uses TCP).
 // Elevator 0: hw=1567, pp=8081 | Elevator 1: hw=1568, pp=8082 | etc.
@@ -54,7 +54,7 @@
 //   0->1: 20001   0->2: 20002
 //   1->0: 20003   1->2: 20005
 //   2->0: 20006   2->1: 20007
-#define ELEVATOR_NET_BASE_PORT         24330
+#define ELEVATOR_NET_BASE_PORT         24330 // 20000 was rather busy from other traffic
 //#define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" } // for testing on own machine
 //#define ELEVATOR_NET_IP_LIST           { "100.10.23.1", "100.10.23.2", "100.10.23.3" } // for testing on lab if able to test address
 #define ELEVATOR_NET_IP_LIST           { "255.255.255.255", "255.255.255.255", "255.255.255.255" } // broadcast

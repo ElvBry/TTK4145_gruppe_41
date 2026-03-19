@@ -64,9 +64,8 @@ void elevator_fsm_update(elevator_local_t *e) {
 
     if (e->state.behaviour == EB_MOVING && e->state.floor != -1) {
         if (requests_shouldStop(*e)) {
-            e->state.dirn = DIRN_STOP;
             elevator_hardware_set_motor_direction(DIRN_STOP);
-            *e = requests_clearAtCurrentFloor(*e);
+            *e = requests_clearAtCurrentFloor(*e);  // uses travel dirn before changing it
             e->state.behaviour = EB_DOOR_OPEN;
             door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
         }

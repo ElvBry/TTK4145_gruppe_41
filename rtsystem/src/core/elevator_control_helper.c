@@ -90,24 +90,23 @@ int requests_shouldStop(elevator_local_t e) {
     }
 }
 
-// Clear all applicable requests at the current floor. Returns the modified elevator.
+// Clear applicable requests at the current floor. Returns the modified elevator.
 // - Always clears the cab request at this floor.
-// - Clears the hall request in the direction of travel.
-// - If no further requests exist in the current direction, also clears the opposite hall request.
+// - Clears only the hall request matching the announced travel direction.
+// - DIRN_STOP (idle, no announced direction) clears both hall requests.
+// - The opposite direction's call is intentionally left: if no further requests
+//   exist in the announced direction, requests_chooseDirection will return
+//   EB_DOOR_OPEN in the new direction, giving the door-change announcement.
 elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e) {
     int f = e.state.floor;
     e.state.cab_requests[f] = 0;
 
     switch (e.state.dirn) {
     case DIRN_UP:
-        if (!requests_above(e) && !e.hall_requests[f][0])
-            e.hall_requests[f][1] = 0;
         e.hall_requests[f][0] = 0;
         break;
 
     case DIRN_DOWN:
-        if (!requests_below(e) && !e.hall_requests[f][1])
-            e.hall_requests[f][0] = 0;
         e.hall_requests[f][1] = 0;
         break;
 

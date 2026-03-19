@@ -90,11 +90,16 @@ void read_update_cab_state(void) {
 void write_elevator_state(void) {
     pthread_mutex_lock(&my_elevator.lock);
 
-    elevator_hardware_motor_direction_t safe_dirn = my_elevator.elevator_state.dirn;
-    if (safe_dirn == DIRN_DOWN && my_elevator.elevator_state.floor == 0)
-        safe_dirn =  DIRN_STOP;
-    if (safe_dirn == DIRN_UP && my_elevator.elevator_state.floor == N_FLOORS - 1)
-        safe_dirn =  DIRN_STOP;
+    // Motor runs only when actively moving — dirn carries travel direction semantics
+    // and must not drive the motor while the door is open or the elevator is idle.
+    elevator_hardware_motor_direction_t safe_dirn = DIRN_STOP;
+    if (my_elevator.elevator_state.behaviour == EB_MOVING) {
+        safe_dirn = my_elevator.elevator_state.dirn;
+        if (safe_dirn == DIRN_DOWN && my_elevator.elevator_state.floor == 0)
+            safe_dirn = DIRN_STOP;
+        if (safe_dirn == DIRN_UP && my_elevator.elevator_state.floor == N_FLOORS - 1)
+            safe_dirn = DIRN_STOP;
+    }
     elevator_hardware_set_motor_direction(safe_dirn);
     elevator_hardware_set_door_open_lamp(my_elevator.elevator_state.behaviour == EB_DOOR_OPEN);
 
