@@ -25,3 +25,10 @@ add_custom_target(setcap
     DEPENDS rtsystem
     COMMENT "Granting cap_sys_nice to rtsystem (allows SCHED_FIFO without sudo)"
 )
+
+# Remove stale process-pair backup files so the next run starts fresh.
+# Run when changing elevator config or after a crash: make -C build fullclean
+add_custom_target(fullclean
+    COMMAND ${CMAKE_COMMAND} -E rm -f /tmp/rtsystem_pp_backup_0.dat /tmp/rtsystem_pp_backup_1.dat
+    COMMENT "Removing stale process pair backup files"
+)

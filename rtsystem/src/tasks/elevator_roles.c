@@ -272,7 +272,6 @@ int elevator_logic_single(void) {
     for (int f = 0; f < N_FLOORS; f++)
         for (int b = 0; b < N_HALL_BUTTONS; b++)
             if (my_elevator.detected_hall_calls[f][b]) {
-                my_elevator.assigned_halls[f][b]          = true;
                 my_elevator.worldview.hall_requests[f][b] = true;
                 my_elevator.detected_hall_calls[f][b]     = false;
             }

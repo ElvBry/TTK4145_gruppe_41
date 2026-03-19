@@ -23,7 +23,10 @@ int door_timer_ticks = 0;
 elevator_local_t take_snapshot(void) {
     pthread_mutex_lock(&my_elevator.lock);
     elevator_local_t local = { .state = my_elevator.elevator_state };
-    memcpy(local.hall_requests, my_elevator.assigned_halls, sizeof(local.hall_requests));
+    if (N_ELEVATORS == 1)
+        memcpy(local.hall_requests, my_elevator.worldview.hall_requests, sizeof(local.hall_requests));
+    else
+        memcpy(local.hall_requests, my_elevator.assigned_halls, sizeof(local.hall_requests));
     pthread_mutex_unlock(&my_elevator.lock);
     return local;
 }
@@ -32,8 +35,6 @@ void commit_snapshot(const elevator_local_t *local) {
     pthread_mutex_lock(&my_elevator.lock);
     my_elevator.elevator_state = local->state;
     if (N_ELEVATORS == 1) {
-        memcpy(my_elevator.assigned_halls, local->hall_requests,
-               sizeof(my_elevator.assigned_halls));
         memcpy(my_elevator.worldview.hall_requests, local->hall_requests,
                sizeof(my_elevator.worldview.hall_requests));
     }
