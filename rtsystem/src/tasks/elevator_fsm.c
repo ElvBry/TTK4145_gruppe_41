@@ -46,7 +46,10 @@ void elevator_fsm_update(elevator_local_t *e) {
     e->state.obstructed = elevator_hardware_get_obstruction_signal();
 
     if (e->state.behaviour == EB_IDLE) {
-        if (e->state.obstructed && e->state.floor >= 0) {
+        if (e->state.floor == -1) {
+            e->state.dirn      = DIRN_DOWN;
+            e->state.behaviour = EB_MOVING;
+        } else if (e->state.obstructed) {
             e->state.behaviour = EB_DOOR_OPEN;
             door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
         } else {

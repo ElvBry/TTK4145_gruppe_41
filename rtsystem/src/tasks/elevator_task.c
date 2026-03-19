@@ -44,39 +44,38 @@ static void restore_state(const process_pair_message_t *committed) {
 }
 
 static void elevator_startup_sequence(void) {
+    LOGI(TAG, "startup sequence: moving down to find floor sensor...");
     int8_t current_floor = elevator_hardware_get_floor_sensor_signal();
-    // ensure that the elevator does not get stuck in one direction or in a loop between two floors
-    int64_t movement_factor = 1; 
-    while (current_floor == -1 && g_running) {
-        for (int i = 0; i < movement_factor * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS && current_floor == -1; i++) {
-            if (!g_running) return;
-            pthread_mutex_lock(&my_elevator.lock);
-            my_elevator.elevator_state.behaviour = EB_MOVING;
-            pthread_mutex_unlock(&my_elevator.lock);
-            elevator_hardware_set_motor_direction(DIRN_DOWN);
-            usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
-            current_floor = elevator_hardware_get_floor_sensor_signal();
-        }
+    const int total_ticks = ELEVATOR_STARTUP_MAX_CYCLES * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS;
 
-        for (int i = 0; i < movement_factor * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS && current_floor == -1; i++) {
-            if (!g_running) return;
-            pthread_mutex_lock(&my_elevator.lock);
-            my_elevator.elevator_state.behaviour = EB_MOVING;
-            pthread_mutex_unlock(&my_elevator.lock);
-            elevator_hardware_set_motor_direction(DIRN_UP);
-            usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
-            current_floor = elevator_hardware_get_floor_sensor_signal();
-        }
-        movement_factor++;
+    for (int i = 0; i < total_ticks && current_floor == -1 && g_running; i++) {
+        pthread_mutex_lock(&my_elevator.lock);
+        my_elevator.elevator_state.behaviour = EB_MOVING;
+        pthread_mutex_unlock(&my_elevator.lock);
+        elevator_hardware_set_motor_direction(DIRN_DOWN);
+        usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
+        current_floor = elevator_hardware_get_floor_sensor_signal();
     }
+
+    elevator_hardware_set_motor_direction(DIRN_STOP);
+
     if (!g_running) return;
+
+    if (current_floor == -1) {
+        LOGE(TAG, "startup sequence: no floor found after %d ticks (~%d ms) — "
+                  "elevator may be out of bounds or motor is cut. Shutting down.",
+             total_ticks, total_ticks * ELEVATOR_TASK_HEARTBEAT_MS);
+        g_running = 0;
+        return;
+    }
+
     pthread_mutex_lock(&my_elevator.lock);
     my_elevator.elevator_state.floor     = current_floor;
     my_elevator.elevator_state.dirn      = DIRN_STOP;
     my_elevator.elevator_state.behaviour = EB_IDLE;
     elevator_hardware_set_motor_direction(DIRN_STOP);
     pthread_mutex_unlock(&my_elevator.lock);
-    LOGD(TAG, "startup sequence done, at floor: %d", current_floor);
+    LOGI(TAG, "startup sequence done, at floor %d", current_floor);
 }
 
 void read_update_cab_state(void) {
