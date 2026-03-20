@@ -1,0 +1,10 @@
+^C:\USERS\MINEP\DESKTOP\SEMESTER 6\SANNTID\TTK4145_GRUPPE_41\RTSYSTEM\BUILD-WIN\CMAKEFILES\72A430FAE8CA9653408DD20117A5A8C2\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SC:/Users/minep/Desktop/Semester 6/Sanntid/TTK4145_gruppe_41/rtsystem" "-BC:/Users/minep/Desktop/Semester 6/Sanntid/TTK4145_gruppe_41/rtsystem/build-win" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "C:/Users/minep/Desktop/Semester 6/Sanntid/TTK4145_gruppe_41/rtsystem/build-win/rtsystem.sln"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

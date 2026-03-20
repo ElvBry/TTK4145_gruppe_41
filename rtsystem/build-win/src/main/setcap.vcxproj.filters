@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\minep\Desktop\Semester 6\Sanntid\TTK4145_gruppe_41\rtsystem\build-win\CMakeFiles\1c1c1668d01e6c583cd91bc680a2bf18\setcap.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\minep\Desktop\Semester 6\Sanntid\TTK4145_gruppe_41\rtsystem\src\main\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\minep\Desktop\Semester 6\Sanntid\TTK4145_gruppe_41\rtsystem\build-win\src\main\CMakeFiles\setcap" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{DAD1E947-E277-30A8-85D2-7A8BEDC29A6B}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
