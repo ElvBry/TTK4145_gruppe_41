@@ -23,9 +23,10 @@ static int             master_peer_idx = -1;
 net_slave_msg_t peer_last_state[N_ELEVATORS];
 static bool     peer_last_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
 
-static int  motorstop_ticks[N_ELEVATORS]    = {0};
-bool        motorstop_detected[N_ELEVATORS] = {false};
-static int64_t peer_acked_counter[N_ELEVATORS] = {0};
+static int  motorstop_ticks[N_ELEVATORS]        = {0};
+static int  motorstop_last_floor[N_ELEVATORS];
+bool        motorstop_detected[N_ELEVATORS]     = {false};
+static int64_t peer_acked_counter[N_ELEVATORS]  = {0};
 
 // ----------------------------------------------------------------
 // Helpers shared across roles
@@ -72,22 +73,27 @@ static void go_disconnected(void) {
         peer_last_state[id].state.behaviour  = EB_IDLE;
         peer_last_state[id].state.obstructed = false;
         memset(peer_last_assignment[id], 0, sizeof(peer_last_assignment[id]));
-        motorstop_ticks[id]    = 0;
-        motorstop_detected[id] = false;
-        peer_acked_counter[id] = 0;
+        motorstop_ticks[id]      = 0;
+        motorstop_last_floor[id] = -1;
+        motorstop_detected[id]   = false;
+        peer_acked_counter[id]   = 0;
     }
 }
 
 static void update_motorstop(int id, elevator_state_t *s) {
-    if (s->behaviour == EB_MOVING) {
-        if (++motorstop_ticks[id] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[id]) {
-            motorstop_detected[id] = true;
-            LOGW(TAG, "motor stop detected on elevator (id=%d)", id);
-        }
-    } else {
-        motorstop_ticks[id] = 0;
-        motorstop_detected[id] = false;
+    if (s->behaviour != EB_MOVING)
+        goto reset_motorstop_counter;
+    if (s->floor != motorstop_last_floor[id])
+        goto reset_motorstop_counter;
+    if (++motorstop_ticks[id] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[id]) {
+        motorstop_detected[id] = true;
+        LOGW(TAG, "motor stop detected on elevator (id=%d)", id);
+        return;
     }
+reset_motorstop_counter:
+    motorstop_ticks[id]      = 0;
+    motorstop_detected[id]   = false;
+    motorstop_last_floor[id] = s->floor;
 }
 
 // ----------------------------------------------------------------
