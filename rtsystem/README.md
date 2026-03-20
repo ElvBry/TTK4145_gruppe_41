@@ -93,8 +93,6 @@ When transitioning to DISCONNECTED, all knowledge about peers is cleared: last k
 
 ## Build
 
-> Warning: This code has only been built and run on Ubuntu and in WSL. It will not work on Windows or MacOs.
-
 ```bash
 # Configure (async logging optional)
 cmake -B build -DASYNC_LOG=ON
@@ -104,9 +102,6 @@ make -C build setcap fullclean
 ```
 
 ## Running
-
-> Warning: This code has only been built and run on Ubuntu and in WSL. It will not work on Windows or MacOs.
-
 Check port configuration in rtsystem_config.h before connecting with elevatorserver or simulator
 
 Start elevator 0:

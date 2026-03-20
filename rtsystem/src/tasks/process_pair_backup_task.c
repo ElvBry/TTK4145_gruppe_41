@@ -186,6 +186,7 @@ static void process_pair_backup_cleanup(task_handle_t *self){
 }
 
 // if timeout, break out of loop and become primary.
+// Currently only takes messages in, have not implemented logic to read back that data to primary yet.
 static void *process_pair_backup_entry(task_handle_t *self){
 
     // SO_RCVTIMEO on the listen socket causes accept() to time out just like

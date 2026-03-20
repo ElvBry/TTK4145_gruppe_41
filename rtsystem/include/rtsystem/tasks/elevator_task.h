@@ -1,5 +1,5 @@
-#ifndef ELEVATOR_TASK_H
-#define ELEVATOR_TASK_H
+#ifndef ELEVATOR_CONTROL_TASK_H
+#define ELEVATOR_CONTROL_TASK_H
 #include <pthread.h>
 
 #include <rtsystem/rtsystem_config.h>
