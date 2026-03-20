@@ -29,9 +29,9 @@ elevator_peer_t g_peers[N_ELEVATORS];
 static const char *const elevator_ips[] = ELEVATOR_NET_IP_LIST;
 
 // Port used for the channel from elevator 'sender' to elevator 'receiver'.
-// Each (sender, receiver) pair has a unique port so recv sockets are dedicated.
-static int net_port(int sender, int receiver) {
-    return ELEVATOR_NET_BASE_PORT + sender * N_ELEVATORS + receiver;
+// Each (sender_id, receiver_id) pair has a unique port so recv sockets are dedicated.
+static int net_port(int sender_id, int receiver_id) {
+    return ELEVATOR_NET_BASE_PORT + sender_id * N_ELEVATORS + receiver_id;
 }
 
 int elevator_net_init(void) {
@@ -124,7 +124,7 @@ void elevator_net_cleanup(void) {
 int elevator_net_send(int peer_idx, const void *msg, size_t len) {
     ssize_t n = send(g_peers[peer_idx].send_fd, msg, len, 0);
     if (n != (ssize_t)len) {
-        if (errno != ECONNREFUSED)
+        if (errno != ECONNREFUSED) // ECONNREFUSED spams log during small packet loss
             LOGW_ERRNO(TAG, "send() to peer %d: ", g_peers[peer_idx].peer_id);
         return -1;
     }
@@ -142,8 +142,7 @@ int elevator_net_recv_raw(int peer_idx, void *buf, size_t max_len) {
 }
 
 int elevator_net_recv_latest(int peer_idx, void *buf, size_t len) {
-    // Drain all queued packets for this peer, keep only the last complete one.
-    // Stale packets can pile up between ticks — we only care about fresh state.
+    // Drain all queued packets for this peer, only read the last package
     uint8_t tmp[256];
     if (len > sizeof(tmp)) {
         LOGE(TAG, "recv_latest: requested size %zu exceeds internal buffer", len);

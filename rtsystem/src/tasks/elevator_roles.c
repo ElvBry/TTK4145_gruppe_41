@@ -19,14 +19,14 @@ static const char *TAG = "elevator_roles";
 
 elevator_role_t elevator_role = DISCONNECTED;
 
-static int             master_peer_idx = -1;
+static int      master_peer_idx = -1;
 net_slave_msg_t peer_last_state[N_ELEVATORS];
 static bool     peer_last_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
 
-static int  motorstop_ticks[N_ELEVATORS]        = {0};
-static int  motorstop_last_floor[N_ELEVATORS];
-bool        motorstop_detected[N_ELEVATORS]     = {false};
-static int64_t peer_acked_counter[N_ELEVATORS]  = {0};
+static int     motorstop_ticks[N_ELEVATORS]       = {0};
+static int     motorstop_last_floor[N_ELEVATORS]  = {0};
+bool           motorstop_detected[N_ELEVATORS]    = {false};
+static int64_t peer_acked_counter[N_ELEVATORS]    = {0};
 
 // ----------------------------------------------------------------
 // Helpers shared across roles
@@ -111,6 +111,36 @@ static void broadcast_own_state(void) {
         elevator_net_send(i, &out, sizeof(out));
 }
 
+static int try_joining_network(int *best_master_idx) {
+    *best_master_idx = -1;
+    bool heard = false;
+    uint8_t buf[256];
+   
+    for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        int n = elevator_net_recv_raw(i, buf, sizeof(buf));
+        if (n <= 0) continue;
+
+        bool valid = false;
+        if (n == (int)sizeof(net_slave_msg_t)) {
+            net_slave_msg_t *m = (net_slave_msg_t *)buf;
+            valid = (m->crc == net_slave_msg_checksum(m));
+        } else if (n == (int)sizeof(net_master_msg_t)) {
+            net_master_msg_t *m = (net_master_msg_t *)buf;
+            valid = (m->crc == net_master_msg_checksum(m));
+        }
+        if (!valid) continue;
+
+        g_peers[i].consecutive_losses = 0;
+        heard = true;
+        if (g_peers[i].peer_id > g_elevator_id) {
+            if (*best_master_idx < 0 ||
+                g_peers[i].peer_id > g_peers[*best_master_idx].peer_id)
+                *best_master_idx = i;
+        }
+    }
+    return heard;
+}
+
 // ----------------------------------------------------------------
 // Slave helpers
 // ----------------------------------------------------------------
@@ -148,8 +178,7 @@ static bool probe_for_higher_master(void) {
     net_slave_msg_t probe = {0};
     pthread_mutex_lock(&my_elevator.lock);
     probe.state = my_elevator.elevator_state;
-    memcpy(probe.detected_hall_calls, my_elevator.detected_hall_calls,
-           sizeof(probe.detected_hall_calls));
+    memcpy(probe.detected_hall_calls, my_elevator.detected_hall_calls, sizeof(probe.detected_hall_calls));
     probe.worldview = my_elevator.worldview;
     pthread_mutex_unlock(&my_elevator.lock);
     probe.crc = net_slave_msg_checksum(&probe);
@@ -177,11 +206,11 @@ static bool probe_for_higher_master(void) {
 // Master helpers
 // ----------------------------------------------------------------
 
-// Returns true if we yielded to a higher-ID peer and should stop the tick.
-// responded[i] is set true for each peer slot that sent a valid message this tick.
-static bool collect_peer_states(worldview_t *proposed, bool responded[N_ELEVATORS - 1]) {
+// heard_from[i] is set true for each peer slot that sent a valid message this tick.
+// updates proposed worldview on other elevators states and hall requests
+static void collect_peer_states(worldview_t *proposed, bool heard_from[N_ELEVATORS - 1]) {
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
-        responded[i] = false;
+        heard_from[i] = false;
         net_slave_msg_t in;
         int got = elevator_net_recv_latest(i, &in, sizeof(in));
 
@@ -200,16 +229,9 @@ static bool collect_peer_states(worldview_t *proposed, bool responded[N_ELEVATOR
         }
 
         g_peers[i].consecutive_losses = 0;
-        responded[i] = true;
+        heard_from[i] = true;
         peer_last_state[g_peers[i].peer_id] = in;
         peer_acked_counter[g_peers[i].peer_id] = in.worldview.worldview_counter;
-
-        if (g_peers[i].peer_id > g_elevator_id) {
-            LOGD(TAG, "peer %d has higher ID, becoming SLAVE", g_peers[i].peer_id);
-            elevator_role   = SLAVE;
-            master_peer_idx = i;
-            return true;
-        }
 
         bool higher = (in.worldview.worldview_counter > proposed->worldview_counter);
 
@@ -237,7 +259,6 @@ static bool collect_peer_states(worldview_t *proposed, bool responded[N_ELEVATOR
                 proposed->hall_requests[f][b] |= in.detected_hall_calls[f][b];
 #endif
     }
-    return false;
 }
 
 static bool all_peers_lost(void) {
@@ -259,8 +280,6 @@ static void mark_served_requests(worldview_t *proposed, elevator_state_t own_sta
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
         if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES) continue;
         int pid = g_peers[i].peer_id;
-        // Two-way handshake guard: only clear a request based on this peer's state
-        // if the peer has acked our current worldview — i.e. it knew about the assignment.
         if (peer_acked_counter[pid] < current_counter) continue;
         elevator_state_t *ps = &peer_last_state[pid].state;
         if (ps->behaviour == EB_DOOR_OPEN && ps->floor >= 0 && !ps->obstructed) {
@@ -272,8 +291,8 @@ static void mark_served_requests(worldview_t *proposed, elevator_state_t own_sta
     }
 }
 
-// Commits proposed worldview if changed and snapshots hall requests as integers for the assigner.
-// Returns true if the worldview was updated.
+// commits proposed worldview if it changed and snapshots hall requests as integers for the assigner.
+// returns true if the worldview was updated.
 static bool commit_worldview(worldview_t proposed, int hall_out[N_FLOORS][N_HALL_BUTTONS]) {
     bool changed;
     pthread_mutex_lock(&my_elevator.lock);
@@ -330,21 +349,19 @@ static void build_elev_array(elevator_local_t out[N_ELEVATORS], elevator_state_t
     memset(out, 0, sizeof(elevator_local_t) * N_ELEVATORS);
     out[g_elevator_id].state = own_state;
     pthread_mutex_lock(&my_elevator.lock);
-    memcpy(out[g_elevator_id].hall_requests, my_elevator.assigned_halls,
-           sizeof(out[g_elevator_id].hall_requests));
+    memcpy(out[g_elevator_id].hall_requests, my_elevator.assigned_halls, sizeof(out[g_elevator_id].hall_requests));
     pthread_mutex_unlock(&my_elevator.lock);
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
         int pid = g_peers[i].peer_id;
         out[pid].state = peer_last_state[pid].state;
-        memcpy(out[pid].hall_requests, peer_last_assignment[pid],
-               sizeof(out[pid].hall_requests));
+        memcpy(out[pid].hall_requests, peer_last_assignment[pid], sizeof(out[pid].hall_requests));
     }
 }
 
-// Two-way handshake: only reply to peers that sent us something this tick.
-static void broadcast_assignments_to_peers(worldview_t wv, bool responded[N_ELEVATORS - 1]) {
+// Two-way handshake: only reply to peers we heard from this heartbeat
+static void broadcast_assignments_to_peers(worldview_t wv, bool heard_from[N_ELEVATORS - 1]) {
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
-        if (!responded[i]) continue;
+        if (!heard_from[i]) continue;
         int pid = g_peers[i].peer_id;
         net_master_msg_t reply = {0};
         memcpy(reply.assigned_halls, peer_last_assignment[pid], sizeof(reply.assigned_halls));
@@ -379,45 +396,19 @@ int elevator_logic_disconnected(void) {
 
     broadcast_own_state();
 
-    int     best_master_idx = -1;
-    bool    heard           = false;
-    uint8_t buf[256];
-
-    for (int i = 0; i < N_ELEVATORS - 1; i++) {
-        int n = elevator_net_recv_raw(i, buf, sizeof(buf));
-        if (n <= 0) continue;
-
-        bool valid = false;
-        if (n == (int)sizeof(net_slave_msg_t)) {
-            net_slave_msg_t *m = (net_slave_msg_t *)buf;
-            valid = (m->crc == net_slave_msg_checksum(m));
-        } else if (n == (int)sizeof(net_master_msg_t)) {
-            net_master_msg_t *m = (net_master_msg_t *)buf;
-            valid = (m->crc == net_master_msg_checksum(m));
-        }
-        if (!valid) continue;
-
-        // Only reset losses for peers that actually responded — dead peers keep
-        // their high count so the new master marks them as skip[] immediately.
-        g_peers[i].consecutive_losses = 0;
-        heard = true;
-        if (g_peers[i].peer_id > g_elevator_id) {
-            if (best_master_idx < 0 ||
-                g_peers[i].peer_id > g_peers[best_master_idx].peer_id)
-                best_master_idx = i;
-        }
-    }
-
+    int best_master_idx;
+    const bool heard = try_joining_network(&best_master_idx);
     if (!heard) return 0;
 
     if (best_master_idx >= 0) {
         elevator_role   = SLAVE;
         master_peer_idx = best_master_idx;
         LOGD(TAG, "joined as SLAVE, master=elevator %d", g_peers[master_peer_idx].peer_id);
-    } else {
-        elevator_role = MASTER;
-        LOGD(TAG, "joined as MASTER (own id=%d)", g_elevator_id);
+        return 0;
     }
+
+    elevator_role = MASTER;
+    LOGD(TAG, "joined as MASTER (own id=%d)", g_elevator_id);
     return 0;
 }
 
@@ -436,12 +427,11 @@ int elevator_logic_slave(void) {
     send_state_to_master();
 
     net_master_msg_t in;
-    int got = elevator_net_recv_latest(master_peer_idx, &in, sizeof(in));
+    const int got = elevator_net_recv_latest(master_peer_idx, &in, sizeof(in));
 
     if (got != 1 || in.crc != net_master_msg_checksum(&in)) {
         if (++g_peers[master_peer_idx].consecutive_losses > ELEVATOR_NET_MAX_LOSSES) {
-            LOGD(TAG, "master (elevator %d) lost, becoming DISCONNECTED",
-                 g_peers[master_peer_idx].peer_id);
+            LOGD(TAG, "master (elevator %d) lost, becoming DISCONNECTED", g_peers[master_peer_idx].peer_id);
             go_disconnected();
         }
         return 0;
@@ -463,7 +453,7 @@ int elevator_logic_master(void) {
     bool own_assigned[N_FLOORS][N_HALL_BUTTONS];
     pthread_mutex_lock(&my_elevator.lock);
     elevator_state_t own_state = my_elevator.elevator_state;
-    worldview_t proposed       = my_elevator.worldview;
+    worldview_t      proposed  = my_elevator.worldview;
 #if PARTITION_POSSIBLE
     proposed.master_id         = (int8_t)g_elevator_id;
 #endif
@@ -473,8 +463,17 @@ int elevator_logic_master(void) {
             proposed.hall_requests[f][b] |= my_elevator.detected_hall_calls[f][b];
     pthread_mutex_unlock(&my_elevator.lock);
 
-    bool responded[N_ELEVATORS - 1];
-    if (collect_peer_states(&proposed, responded)) return 0;
+    bool heard_from[N_ELEVATORS - 1];
+    collect_peer_states(&proposed, heard_from);
+
+    for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        if (heard_from[i] && g_peers[i].peer_id > g_elevator_id) {
+            LOGD(TAG, "peer %d has higher ID, becoming SLAVE", g_peers[i].peer_id);
+            elevator_role   = SLAVE;
+            master_peer_idx = i;
+            return 0;
+        }
+    }
 
     if (all_peers_lost() && N_ELEVATORS > 1) {
         LOGD(TAG, "all peers lost, becoming DISCONNECTED");
@@ -490,12 +489,10 @@ int elevator_logic_master(void) {
 
     mark_served_requests(&proposed, own_state, own_assigned, proposed.worldview_counter);
 
-    // Two-way handshake: only commit worldview and reply if at least one slave
-    // responded this tick. This ensures worldview advances only when we are
-    // confirmed to be inside the network, not from unilateral observation.
-    bool any_responded = false;
-    for (int i = 0; i < N_ELEVATORS - 1; i++) any_responded |= responded[i];
-    if (!any_responded) return 0;
+    // Two-way handshake. Master should only respond
+    bool heard_from_any = false;
+    for (int i = 0; i < N_ELEVATORS - 1; i++) heard_from_any |= heard_from[i];
+    if (!heard_from_any) return 0;
 
     int hall_int[N_FLOORS][N_HALL_BUTTONS];
     if (commit_worldview(proposed, hall_int))
@@ -521,15 +518,15 @@ int elevator_logic_master(void) {
     worldview_t wv_snapshot = my_elevator.worldview;
     pthread_mutex_unlock(&my_elevator.lock);
 
-    broadcast_assignments_to_peers(wv_snapshot, responded);
+    broadcast_assignments_to_peers(wv_snapshot, heard_from);
 
     return 0;
 }
 
 void elevator_roles_init_peer_state(void) {
     for (int i = 0; i < N_ELEVATORS; i++) {
-        peer_last_state[i].state.floor = -1;
-        peer_last_state[i].state.dirn = DIRN_STOP;
+        peer_last_state[i].state.floor     = -1;
+        peer_last_state[i].state.dirn      = DIRN_STOP;
         peer_last_state[i].state.behaviour = EB_IDLE;
     }
 }
