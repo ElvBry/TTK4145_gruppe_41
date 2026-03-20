@@ -79,7 +79,7 @@ static void go_disconnected(void) {
 }
 
 static void update_motorstop(int id, elevator_state_t *s) {
-    if (s->behaviour == EB_MOVING && s->floor == -1) {
+    if (s->behaviour == EB_MOVING) {
         if (++motorstop_ticks[id] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[id]) {
             motorstop_detected[id] = true;
             LOGW(TAG, "motor stop detected on elevator (id=%d)", id);
