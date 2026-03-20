@@ -25,7 +25,7 @@
 #define PROCESS_PAIR_HEARTBEAT_MS 25
 #define PROCESS_PAIR_HEARTBEAT_TIMEOUT_MS 1000
 
-#define ELEVATOR_TASK_HEARTBEAT_MS 50
+#define ELEVATOR_TASK_HEARTBEAT_MS 25
 #define ELEVATOR_DOOR_OPEN_HEARTBEATS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
 #define ELEVATOR_STARTUP_HEARTBEATS_BETWEEN_FLOORS (3000/ ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
 #define ELEVATOR_STARTUP_MAX_CYCLES 2
@@ -60,7 +60,7 @@
 //#define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" } // for testing on own machine
 //#define ELEVATOR_NET_IP_LIST           { "100.10.23.1", "100.10.23.2", "100.10.23.3" } // for testing on lab if able to test address
 #define ELEVATOR_NET_IP_LIST           { "255.255.255.255", "255.255.255.255", "255.255.255.255" } // broadcast
-#define ELEVATOR_NET_MAX_LOSSES        8     // consecutive missed heartbeats before disconnect
+#define ELEVATOR_NET_MAX_LOSSES        10     // consecutive missed heartbeats before disconnect
 
 // Per-module log levels from log_helper.h or async_log_helper.h (only used for ease of development)
 #define LOG_LEVEL_MAIN              LOG_LEVEL_DEBUG
