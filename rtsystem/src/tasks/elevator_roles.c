@@ -62,6 +62,20 @@ static void go_disconnected(void) {
     // detected_hall_calls intentionally preserved: unconfirmed button presses
     // must survive role transitions so the new master can commit them.
     pthread_mutex_unlock(&my_elevator.lock);
+
+    // All peer knowledge is invalid after losing the network.
+    // Only worldview and own elevator state survive role transitions.
+    // Fresh state arrives via handshake after reconnect.
+    for (int id = 0; id < N_ELEVATORS; id++) {
+        peer_last_state[id].state.floor      = -1;
+        peer_last_state[id].state.dirn       = DIRN_STOP;
+        peer_last_state[id].state.behaviour  = EB_IDLE;
+        peer_last_state[id].state.obstructed = false;
+        memset(peer_last_assignment[id], 0, sizeof(peer_last_assignment[id]));
+        motorstop_ticks[id]    = 0;
+        motorstop_detected[id] = false;
+        peer_acked_counter[id] = 0;
+    }
 }
 
 static void update_motorstop(int id, elevator_state_t *s) {
@@ -166,7 +180,16 @@ static bool collect_peer_states(worldview_t *proposed, bool responded[N_ELEVATOR
         int got = elevator_net_recv_latest(i, &in, sizeof(in));
 
         if (got != 1 || in.crc != net_slave_msg_checksum(&in)) {
-            g_peers[i].consecutive_losses++;
+            if (++g_peers[i].consecutive_losses >= ELEVATOR_NET_MAX_LOSSES) {
+                // Peer just became lost — clear stale assignment and state so the
+                // assigner never pre-seeds a call to a dead elevator next tick.
+                int pid = g_peers[i].peer_id;
+                memset(peer_last_assignment[pid], 0, sizeof(peer_last_assignment[pid]));
+                peer_last_state[pid].state.floor      = -1;
+                peer_last_state[pid].state.behaviour  = EB_IDLE;
+                peer_last_state[pid].state.dirn       = DIRN_STOP;
+                peer_last_state[pid].state.obstructed = false;
+            }
             continue;
         }
 
@@ -231,7 +254,7 @@ static void mark_served_requests(worldview_t *proposed, elevator_state_t own_sta
                 proposed->hall_requests[f][b] = false;
     }
     for (int i = 0; i < N_ELEVATORS - 1; i++) {
-        if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES / 2) continue;
+        if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES) continue;
         int pid = g_peers[i].peer_id;
         // Two-way handshake guard: only clear a request based on this peer's state
         // if the peer has acked our current worldview — i.e. it knew about the assignment.
@@ -457,8 +480,10 @@ int elevator_logic_master(void) {
     }
 
     update_motorstop(g_elevator_id, &own_state);
-    for (int i = 0; i < N_ELEVATORS - 1; i++)
+    for (int i = 0; i < N_ELEVATORS - 1; i++) {
+        if (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES) continue;
         update_motorstop(g_peers[i].peer_id, &peer_last_state[g_peers[i].peer_id].state);
+    }
 
     mark_served_requests(&proposed, own_state, own_assigned, proposed.worldview_counter);
 
