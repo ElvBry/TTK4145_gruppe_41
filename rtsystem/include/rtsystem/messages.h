@@ -19,7 +19,6 @@ typedef enum {
 } elevator_behaviour_t;
 
 
-// TODO: Could probably be called cab state instead, but not worth doing before having a working model
 typedef struct {
     int8_t                              floor; // -1 for being in between floors/unknown
     elevator_hardware_motor_direction_t dirn;

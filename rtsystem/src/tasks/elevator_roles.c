@@ -225,13 +225,10 @@ static bool collect_peer_states(worldview_t *proposed, bool responded[N_ELEVATOR
         }
 #else
         if (higher)
-            proposed->worldview_counter = in.worldview.worldview_counter;
+            *proposed = in.worldview;
         for (int f = 0; f < N_FLOORS; f++)
-            for (int b = 0; b < N_HALL_BUTTONS; b++) {
+            for (int b = 0; b < N_HALL_BUTTONS; b++)
                 proposed->hall_requests[f][b] |= in.detected_hall_calls[f][b];
-                if (in.worldview.worldview_counter >= proposed->worldview_counter)
-                    proposed->hall_requests[f][b] |= in.worldview.hall_requests[f][b];
-            }
 #endif
     }
     return false;
