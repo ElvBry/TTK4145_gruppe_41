@@ -88,8 +88,8 @@ static void update_motorstop(int id, elevator_state_t *s) {
     if (++motorstop_ticks[id] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[id]) {
         motorstop_detected[id] = true;
         LOGW(TAG, "motor stop detected on elevator (id=%d)", id);
-        return;
     }
+    return;
 reset_motorstop_counter:
     motorstop_ticks[id]      = 0;
     motorstop_detected[id]   = false;
