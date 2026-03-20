@@ -335,6 +335,14 @@ static void performSingleMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_
             } else {
                 s->e.state.behaviour = EB_IDLE;
             }
+        } else if (pair.behaviour == EB_DOOR_OPEN) {
+            // Direction reversal with a call at the current floor (e.g. going DOWN
+            // with a UP call here and nothing below). Service it now with the new
+            // direction so sim_clearAndAssign clears the correct hall button.
+            s->e.state.dirn = pair.dirn;
+            sim_clearAndAssign(s, elevIdx, reqs);
+            s->time += DOOR_OPEN_TIME;
+            s->e.state.behaviour = EB_DOOR_OPEN;
         } else {
             s->e.state.behaviour  = EB_MOVING;
             s->e.state.floor     += s->e.state.dirn;
@@ -346,10 +354,11 @@ static void performSingleMove(SimState *s, int elevIdx, SimReq reqs[N_FLOORS][N_
 }
 
 // Assign active hall calls to elevators based on simulated travel cost.
-void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
-                        int              hallRequests[N_FLOORS][N_HALL_BUTTONS],
-                        int              output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS],
-                        const bool       skip[N_ELEVATORS]) {
+hall_assignment_t assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
+                                     int              hallRequests[N_FLOORS][N_HALL_BUTTONS],
+                                     const bool       skip[N_ELEVATORS]) {
+    hall_assignment_t result;
+    memset(&result, 0, sizeof(result));
     // Build request tracking table. Pre-seed existing assignments so the
     // optimizer only runs for truly new requests. This prevents an already-
     // assigned elevator from losing its request due to a tick-by-tick cost
@@ -397,10 +406,10 @@ void assignHallRequests(elevator_local_t elevators[N_ELEVATORS],
         performSingleMove(&states[i], i, reqs);
     }
 
-    // Write results to output array.
-    memset(output, 0, sizeof(int) * N_ELEVATORS * N_FLOORS * N_HALL_BUTTONS);
+    // Write results.
     for (int f = 0; f < N_FLOORS; f++)
         for (int b = 0; b < N_HALL_BUTTONS; b++)
             if (reqs[f][b].active && reqs[f][b].assignedTo >= 0)
-                output[reqs[f][b].assignedTo][f][b] = 1;
+                result.halls[reqs[f][b].assignedTo][f][b] = 1;
+    return result;
 }

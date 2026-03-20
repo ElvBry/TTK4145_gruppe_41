@@ -22,11 +22,14 @@ int requests_shouldStop(elevator_local_t e) __attribute__((pure));
 
 elevator_local_t requests_clearAtCurrentFloor(elevator_local_t e) __attribute__((pure));
 
-void assignHallRequests(
+typedef struct {
+    int halls[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
+} hall_assignment_t;
+
+hall_assignment_t assignHallRequests(
     elevator_local_t elevators[N_ELEVATORS],
     int hallRequests[N_FLOORS][N_HALL_BUTTONS],
-    int output[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS],
     const bool skip[N_ELEVATORS]
-);
+) __attribute__((pure));
 
 #endif

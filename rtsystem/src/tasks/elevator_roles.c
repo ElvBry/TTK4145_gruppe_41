@@ -510,10 +510,9 @@ int elevator_logic_master(void) {
                  || (g_peers[i].consecutive_losses > ELEVATOR_NET_MAX_LOSSES);
     }
 
-    int new_assignment[N_ELEVATORS][N_FLOORS][N_HALL_BUTTONS];
-    assignHallRequests(elev_array, hall_int, new_assignment, skip);
+    hall_assignment_t assignment = assignHallRequests(elev_array, hall_int, skip);
 
-    apply_new_assignments(new_assignment);
+    apply_new_assignments(assignment.halls);
 
     pthread_mutex_lock(&my_elevator.lock);
     worldview_t wv_snapshot = my_elevator.worldview;
