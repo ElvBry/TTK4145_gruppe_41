@@ -6,7 +6,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
-#include <rtsystem/core/elevator_network.h>
+#include <rtsystem/drivers/elevator_network.h>
 #include <rtsystem/rtsystem_config.h>
 
 #define LOG_LEVEL LOG_LEVEL_ELEVATOR_NETWORK

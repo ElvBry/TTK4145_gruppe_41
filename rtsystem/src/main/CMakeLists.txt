@@ -15,7 +15,6 @@ endif()
 
 target_link_libraries(rtsystem PRIVATE
     tasks
-    core
 )
 
 # Grant the binary permission to use SCHED_FIFO without running as root.

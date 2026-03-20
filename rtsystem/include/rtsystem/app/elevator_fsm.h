@@ -1,9 +1,9 @@
-#ifndef ELEVATOR_CONTROL_HELPER_H
-#define ELEVATOR_CONTROL_HELPER_H
+#ifndef ELEVATOR_FSM_H
+#define ELEVATOR_FSM_H
 
 #include <rtsystem/rtsystem_config.h>
 #include <rtsystem/messages.h>
-#include <rtsystem/core/elevator_hardware.h>
+#include <rtsystem/drivers/elevator_hardware.h>
 
 
 typedef struct {

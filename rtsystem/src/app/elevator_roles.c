@@ -2,10 +2,10 @@
 #include <string.h>
 
 #include "rtsystem/tasks/elevator_task.h"
-#include "rtsystem/tasks/elevator_roles.h"
-#include "rtsystem/core/elevator_network.h"
-#include "rtsystem/core/elevator_control_helper.h"
-#include "rtsystem/core/elevator_hardware.h"
+#include "rtsystem/app/elevator_roles.h"
+#include "rtsystem/drivers/elevator_network.h"
+#include "rtsystem/app/elevator_fsm.h"
+#include "rtsystem/drivers/elevator_hardware.h"
 #include <rtsystem/rtsystem_config.h>
 
 #define LOG_LEVEL LOG_LEVEL_BACKUP_TASK
@@ -85,7 +85,7 @@ static void update_motorstop(int id, elevator_state_t *s) {
         goto reset_motorstop_counter;
     if (s->floor != motorstop_last_floor[id])
         goto reset_motorstop_counter;
-    if (++motorstop_ticks[id] >= TICKS_BEFORE_MOTORSTOP && !motorstop_detected[id]) {
+    if (++motorstop_ticks[id] >= ELEVATOR_HEARTBEATS_BEFORE_MOTORSTOP && !motorstop_detected[id]) {
         motorstop_detected[id] = true;
         LOGW(TAG, "motor stop detected on elevator (id=%d)", id);
     }

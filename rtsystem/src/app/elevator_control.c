@@ -3,11 +3,10 @@
 #include <stdio.h>
 
 #include "rtsystem/tasks/elevator_task.h"
-#include "rtsystem/tasks/elevator_fsm.h"
-#include "rtsystem/tasks/elevator_roles.h"
-#include "rtsystem/core/elevator_control_helper.h"
-#include "rtsystem/core/elevator_hardware.h"
-#include "rtsystem/core/elevator_network.h"
+#include "rtsystem/app/elevator_control.h"
+#include "rtsystem/app/elevator_roles.h"
+#include "rtsystem/drivers/elevator_hardware.h"
+#include "rtsystem/drivers/elevator_network.h"
 #include <rtsystem/rtsystem_config.h>
 
 #define LOG_LEVEL LOG_LEVEL_BACKUP_TASK
@@ -17,9 +16,9 @@
     #include <rtsystem/log_helper.h>
 #endif
 
-static const char *TAG = "elevator_fsm";
+static const char *TAG = "elevator_control";
 
-int door_timer_ticks = 0;
+int door_timer_heartbeats = 0;
 
 elevator_local_t take_snapshot(void) {
     pthread_mutex_lock(&my_elevator.lock);
@@ -42,7 +41,7 @@ void commit_snapshot(const elevator_local_t *local) {
     pthread_mutex_unlock(&my_elevator.lock);
 }
 
-void elevator_fsm_update(elevator_local_t *e) {
+void elevator_control_update(elevator_local_t *e) {
     e->state.obstructed = elevator_hardware_get_obstruction_signal();
 
     if (e->state.behaviour == EB_IDLE) {
@@ -51,7 +50,7 @@ void elevator_fsm_update(elevator_local_t *e) {
             e->state.behaviour = EB_MOVING;
         } else if (e->state.obstructed) {
             e->state.behaviour = EB_DOOR_OPEN;
-            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+            door_timer_heartbeats = ELEVATOR_DOOR_OPEN_HEARTBEATS;
         } else {
             dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
             if (pair.behaviour != EB_IDLE) {
@@ -59,7 +58,7 @@ void elevator_fsm_update(elevator_local_t *e) {
                 e->state.behaviour = pair.behaviour;
                 if (pair.behaviour == EB_DOOR_OPEN) {
                     *e = requests_clearAtCurrentFloor(*e);
-                    door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+                    door_timer_heartbeats = ELEVATOR_DOOR_OPEN_HEARTBEATS;
                 }
             }
         }
@@ -70,21 +69,21 @@ void elevator_fsm_update(elevator_local_t *e) {
             elevator_hardware_set_motor_direction(DIRN_STOP);
             *e = requests_clearAtCurrentFloor(*e);  // uses travel dirn before changing it
             e->state.behaviour = EB_DOOR_OPEN;
-            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+            door_timer_heartbeats = ELEVATOR_DOOR_OPEN_HEARTBEATS;
         }
     }
 
-    if (door_timer_ticks > 0) {
+    if (door_timer_heartbeats > 0) {
         if (e->state.obstructed)
-            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
-        (door_timer_ticks)--;
-        if (door_timer_ticks == 0 && !e->state.obstructed) {
+            door_timer_heartbeats = ELEVATOR_DOOR_OPEN_HEARTBEATS;
+        (door_timer_heartbeats)--;
+        if (door_timer_heartbeats == 0 && !e->state.obstructed) {
             *e = requests_clearAtCurrentFloor(*e);
             dirn_behaviour_pair_t pair = requests_chooseDirection(*e);
             e->state.dirn      = pair.dirn;
             e->state.behaviour = pair.behaviour;
             if (pair.behaviour == EB_DOOR_OPEN)
-                door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+                door_timer_heartbeats = ELEVATOR_DOOR_OPEN_HEARTBEATS;
         }
     }
 }

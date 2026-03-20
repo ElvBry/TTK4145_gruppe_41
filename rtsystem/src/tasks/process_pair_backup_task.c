@@ -12,8 +12,8 @@
 
 #include <rtsystem/tasks/process_pair_backup_task.h>
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/task_helper.h>
-#include <rtsystem/core/elevator_network.h>
+#include <rtsystem/util/task_helper.h>
+#include <rtsystem/drivers/elevator_network.h>
 #include <rtsystem/messages.h>
 
 
@@ -152,9 +152,9 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
 
     for (int i = 0; i < NPLEX; i++) {
         FILE *f = fopen(g_store_paths[i], "rb");
-        if (f) {
+        if (f)
             fclose(f);
-        } else {
+        else {
             f = fopen(g_store_paths[i], "wb");
             if (!f) {
                 LOGE(TAG, "failed to create store file %s", g_store_paths[i]);
@@ -168,7 +168,8 @@ static int process_pair_backup_init(task_handle_t *self, void *init_arg){
     if (!reliable_read(&committed)) {
         LOGD(TAG, "no valid committed state on disk, starting fresh");
         memset(&committed, 0, sizeof(committed));
-    } else LOGD(TAG, "restored committed state from disk");
+    } else
+        LOGD(TAG, "restored committed state from disk");
     return 0;
 }
 

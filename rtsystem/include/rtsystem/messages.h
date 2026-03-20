@@ -6,18 +6,15 @@
 #include <stdbool.h>
 
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/elevator_hardware.h>
+#include <rtsystem/drivers/elevator_hardware.h>
 
 #define N_HALL_BUTTONS 2
-
-// TODO: might define somewhere else after elevator setup is known.
 
 typedef enum {
     EB_IDLE      = 0,
     EB_MOVING    = 1,
     EB_DOOR_OPEN = 2,
 } elevator_behaviour_t;
-
 
 typedef struct {
     int8_t                              floor; // -1 for being in between floors/unknown

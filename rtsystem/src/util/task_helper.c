@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/task_helper.h>
+#include <rtsystem/util/task_helper.h>
 
 #define LOG_LEVEL LOG_LEVEL_TASK_HELPER
 #ifdef ASYNC_LOG

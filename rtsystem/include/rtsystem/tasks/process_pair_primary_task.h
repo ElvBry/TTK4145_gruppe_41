@@ -2,7 +2,7 @@
 #define PROCESS_PAIR_PRIMARY_TASK_H
 
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/task_helper.h>
+#include <rtsystem/util/task_helper.h>
 
 extern const task_config_t primary_task_config;
 

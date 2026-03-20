@@ -8,37 +8,41 @@ Real-time multiple elevator control system for TTK4145
 rtsystem/
 ├── include/rtsystem/
 │   ├── rtsystem_config.h             # Adjustable compile-time constants
-│   ├── messages.h                    # Shared structs and crc32 used for messages and elevator control
-│   ├── log_helper.h                  # Synchronous logging macros without async log task (Old)
-│   ├── async_log_helper.h            # Async logging macros used with log_task (just for visual appeal)
-│   ├── core/
-│   │   ├── task_helper.h             # Helpers to standardize usage of posix threads and resources to reduce conflicts
-│   │   ├── elevator_hardware.h       # TCP hardware driver from TTK4145 (rewritten for logging and disconnect robustness)
-│   │   ├── elevator_network.h        # UDP inter-elevator messaging
-│   │   ├── elevator_control_helper.h # FSM helper for elevator control and cost function (rewritten in C from TTK4145 D implementation)
-│   │   └── fifo_queue.h              # FIFO queue used with async log_task to allow threads to log without waiting on system (mostly for fun)
+│   ├── messages.h                    # Shared structs and crc32 used for messages and elevator state
+│   ├── log_helper.h                  # Synchronous logging macros (alternative if ASYNC_LOG=OFF)
+│   ├── async_log_helper.h            # Async logging macros used with log_task
+│   ├── drivers/
+│   │   ├── elevator_hardware.h       # TCP hardware driver from TTK4145 (slightly rewritten for logging and disconnect robustness)
+│   │   └── elevator_network.h        # UDP inter-elevator messaging, peer tracking
+│   ├── app/
+│   │   ├── elevator_fsm.h            # Pure FSM primitives from TTK4145 (rewritten to fulfill system requirements)
+│   │   ├── elevator_control.h        # Control update tick, state snapshot, door timer, log formatting
+│   │   └── elevator_roles.h          # DISCONNECTED/SLAVE/MASTER role logic and worldview management
+│   ├── util/
+│   │   ├── task_helper.h             # POSIX thread lifecycle helpers for consistent interface and clean shutdown during development
+│   │   └── fifo_queue.h              # Priority inheriting FIFO used by async log task
 │   └── tasks/
-│       ├── elevator_task.h             # Access to shared elevator state with my_elevator and config
-│       ├── elevator_fsm.h              # FSM update, state snapshot, door timer, log for dumping state to terminal
-│       ├── elevator_roles.h            # Role enum (DISCONNECTED/SLAVE/MASTER), per-role logic
-│       ├── process_pair_primary_task.h # Config to call in main
-│       ├── process_pair_backup_task.h  # Config to call in main
-│       └── log_task.h                  # Functions to create custom async log task (not used with task_helper to allow for logging during shutdown)
+│       ├── elevator_task.h
+│       ├── process_pair_primary_task.h
+│       ├── process_pair_backup_task.h
+│       └── log_task.h                # Async log task (compiled if ASYNC_LOG=ON, not managed by task_helper to allow logging during shutdown)
 ├── src/
-│   ├── main/main.c                    # Entry point, process pair creation, signal handling and backup promotion
-│   ├── core/
-│   │   ├── task_helper.c              # Task and task array management for clean shutdown and eventfd signaling to tasks
-│   │   ├── elevator_hardware.c        # TCP socket driver for elevator hardware server/unit
-│   │   ├── elevator_network.c         # UDP send/recv sockets, peer connection tracking
-│   │   ├── elevator_control_helper.c  # Pure FSM logic
+│   ├── main/main.c                   # Entry point, process pair creation, signal handling, backup promotion and shutdown
+│   ├── drivers/
+│   │   ├── elevator_hardware.c
+│   │   └── elevator_network.c
+│   ├── app/
+│   │   ├── elevator_fsm.c
+│   │   ├── elevator_control.c
+│   │   └── elevator_roles.c
+│   ├── util/
+│   │   ├── task_helper.c
 │   │   └── fifo_queue.c
 │   └── tasks/
-│       ├── elevator_task.c             # Elevator system control loop, startup sequence, and hw reconnect. Main logic of system
-│       ├── elevator_fsm.c              # FSM tick, snapshot commit, door timer, log formatting used by elevator_task
-│       ├── elevator_roles.c            # DISCONNECTED/SLAVE/MASTER role logic called by elevator_task
-│       ├── process_pair_primary_task.c # Process pair task that handles elevator_task initialization, backup respawning and transfer of elevator state to backup
-│       ├── process_pair_backup_task.c  # Process pair task that stores elevator state, promotes to primary when it stops responding (only one is active)
-│       └── log_task.c                  # Async log task (only used when ASYNC_LOG=ON)
+│       ├── elevator_task.c
+│       ├── process_pair_primary_task.c
+│       ├── process_pair_backup_task.c
+│       └── log_task.c
 └── CMakeLists.txt
 ```
 
@@ -46,39 +50,66 @@ rtsystem/
 
 ### Process pairs (fault tolerance)
 Each physical elevator runs two OS processes: a **primary** and a **backup**.
-System assumes it is impossible to have more than one connected network partition at once, which is only possible for 4 or more elevators.
-- Process starts as backup, tries to binds the process-pair TCP port. If primary does not connect, becomes primary and spawns new backup process.
-- Primary connects to backup and sends periodic heartbeats containing the elevator state and worldview. Backup stores most recent elevator state and worldview.
-- If primary dies, backup detects missed heartbeats, promotes to primary (spawning a fresh backup) and restores most recent committed state.
-- If backup dies, primary detects missed heartbeats, spawns a fresh backup and continues as normal.
-- Graceful shutdown: If primary receives SIGINT: sends `PP_MSG_SHUTDOWN` over channel, both processes exiting gracefully
+
+- The process starts as backup and tries to bind the process-pair TCP port. If the primary does not connect within the timeout, it promotes itself to primary and spawns a fresh backup.
+- The primary sends periodic heartbeats to the backup containing the current elevator state and worldview. The backup stores the most recent committed state.
+- If the primary dies, the backup detects missed heartbeats, promotes itself (spawning a fresh backup), and restores the last committed state.
+- If the backup dies, the primary detects missed heartbeats, spawns a fresh backup, and continues as normal.
+- Graceful shutdown: SIGINT on the primary sends `PP_MSG_SHUTDOWN` to the backup. Both exit gracefully.
 
 ### Inter-elevator networking
-Elevators exchange state and hall-call assignments over **UDP unicast**. Port assignment decided by --id option. Elevators move between roles during elevator_task heartbeats. Roles create a robust framework for 2-3 elevators, never dropping accepted hall calls during testing. For 4 or more elevators, worldview handling needs to change as system assumes multiple temporarily connected network partitons at the same time are impossible.
 
-Roles:
-- **DISCONNECTED**: no peers visible. serves only cab calls and tries to reconnect to network as either master or slave.
-- **SLAVE**:        Connected to peer with higher ID. Sends elevator state, cab calls and hall requests, receives back assigned halls and worldview from master
-- **MASTER**:       Highest-ID of connected elevators. Computes and distributes hall call assignments and updates worldview based on hall requests
+Elevators exchange state and hall-call assignments over **UDP broadcast** at a fixed heartbeat rate. Each elevator has a dedicated send and receive port per peer.
+
+#### Roles
+
+- **DISCONNECTED**: No peers visible. Serves only cab calls. Broadcasts own state and listens for peers each heartbeat. Transitions to SLAVE if a higher-ID peer responds, MASTER if only lower-ID peers respond.
+- **SLAVE**: Connected to the highest-ID active peer (master). Sends own state, cab requests, and detected hall button presses each heartbeat. Receives assigned hall calls and the committed worldview back from master.
+- **MASTER**: Highest-ID active elevator. Collects state from all slaves, runs hall call assignment, updates the worldview and replies to each slave that responded this heartbeat.
+
+#### Two-way handshake
+
+Slaves sends, but master only responds. Slaves send state, hall calls and worldview, Master responds with assigned halls and a new proposed worldview, removing serviced calls and adding the requestsed from all active elevators. Master only commits worldview and distributes assignments when at least one peer has responded during the heartbeat. This ensures the worldview counter only advances when the master is confirmed to be inside the network. Calls are only removed via peer acknowledgement.
+
+#### Worldview
+
+Worldview is the shared set of known active hall calls (cab calls and elevator state are local to each elevator)
+
+- Master proposes a new worldview by OR-ing in detected hall calls from all peers.
+- Calls are only cleared from worldview when the elevator serving them has confirmed door-open at the correct floor and has acknowledged the current worldview counter.
+- When a master rejoins the network after being disconnected, if any slave holds a higher worldview counter, the master fully replaces its own worldview with the slave's. Ensuring that already served calls are not reintroduced.
+
+#### Peer state on disconnect
+
+When transitioning to DISCONNECTED, all knowledge about peers is cleared: last known state, last assignments, motor stop counters, and acknowledged worldview counters. Only the elevator's own state and worldview survive role transitions.
+
+### Supported configurations
+
+| N_ELEVATORS | Behaviour |
+|-------------|-----------|
+| 1           | Single-elevator mode: no networking, serves all hall and cab calls directly |
+| 2–3         | Full master/slave/disconnected networking. Only possible to have one network, ensuring that hall calls are not reintroduced |
+| 4+          | Sets `PARTITION_POSSIBLE` automatically in config. If two worldviews are from masters with different ID, a new worldview combines both
 
 ## Build
 
 ```bash
-# Configure (async logging optional, but more stylish)
+# Configure (async logging optional)
 cmake -B build -DASYNC_LOG=ON
 
-# Compile and grant SCHED_FIFO permission for thread priority levels
-make -C build setcap
+# Compile and grant SCHED_FIFO permission for thread priority levels and removes comitted state files from backup task
+make -C build setcap fullclean
 ```
 
 ## Running
+Check port configuration in rtsystem_config.h before connecting with elevatorserver or simulator
 
-Start elevator 0
+Start elevator 0:
 ```bash
 ./build/src/main/rtsystem --id 0
 ```
 
-To run all three elevators on simulator
+To run all three elevators on the simulator, change IP to localhost in rtsystem_config.h and run all on same computer:
 ```bash
 ./build/src/main/rtsystem --id 0
 ./build/src/main/rtsystem --id 1
@@ -95,5 +126,5 @@ pkill -2 rtsystem
 ```
 or
 ```bash
-kill -2 <pid of primary> 
+kill -2 <pid of primary>
 ```

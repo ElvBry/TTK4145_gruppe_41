@@ -14,7 +14,7 @@
 #include <errno.h>
 #include <time.h>
 
-#include <rtsystem/core/fifo_queue.h>
+#include <rtsystem/util/fifo_queue.h>
 
 #define LOG_LEVEL_DEBUG 0
 #define LOG_LEVEL_INFO  1

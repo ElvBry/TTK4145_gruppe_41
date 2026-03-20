@@ -4,7 +4,7 @@
 #include <sys/eventfd.h>
 #include <stdint.h>
 
-#include <rtsystem/core/fifo_queue.h>
+#include <rtsystem/util/fifo_queue.h>
 
 int fifo_queue_init(fifo_queue_t* queue, size_t item_size, size_t capacity) {
     queue->buffer = malloc(item_size * capacity);

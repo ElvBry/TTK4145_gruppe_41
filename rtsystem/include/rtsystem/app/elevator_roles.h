@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/elevator_network.h>
+#include <rtsystem/drivers/elevator_network.h>
 
 typedef enum {
     DISCONNECTED = 0,

@@ -1,5 +1,5 @@
 #include "rtsystem/messages.h"
-#include <rtsystem/core/elevator_network.h>
+#include <rtsystem/drivers/elevator_network.h>
 #include "rtsystem/tasks/elevator_task.h"
 #include <netinet/in.h>
 #include <stdlib.h>
@@ -9,7 +9,7 @@
 #include <limits.h>
 
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/task_helper.h>
+#include <rtsystem/util/task_helper.h>
 #include <rtsystem/tasks/process_pair_primary_task.h>
 
 #define LOG_LEVEL LOG_LEVEL_PRIMARY_TASK

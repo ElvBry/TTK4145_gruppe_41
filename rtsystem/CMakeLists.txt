@@ -27,7 +27,9 @@ else()
     message(STATUS "ASYNC_LOG: OFF (enable with -DASYNC_LOG=ON)")
 endif()
 
-add_subdirectory(src/core)
+add_subdirectory(src/util)
+add_subdirectory(src/drivers)
+add_subdirectory(src/app)
 add_subdirectory(src/tasks)
 add_subdirectory(src/main)
 

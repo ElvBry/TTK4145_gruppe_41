@@ -6,12 +6,12 @@
 #include <errno.h>
 
 #include "rtsystem/tasks/elevator_task.h"
-#include "rtsystem/tasks/elevator_fsm.h"
-#include "rtsystem/tasks/elevator_roles.h"
-#include "rtsystem/core/elevator_hardware.h"
-#include "rtsystem/core/elevator_network.h"
+#include "rtsystem/app/elevator_control.h"
+#include "rtsystem/app/elevator_roles.h"
+#include "rtsystem/drivers/elevator_hardware.h"
+#include "rtsystem/drivers/elevator_network.h"
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/task_helper.h>
+#include <rtsystem/util/task_helper.h>
 #include <rtsystem/messages.h>
 
 #define LOG_LEVEL LOG_LEVEL_BACKUP_TASK
@@ -36,7 +36,7 @@ static void restore_state(const process_pair_message_t *committed) {
     my_elevator.worldview = committed->worldview;
     if (committed->my_elevator_state.behaviour == EB_DOOR_OPEN) {
         if (my_elevator.elevator_state.floor == committed->my_elevator_state.floor)
-            door_timer_ticks = ELEVATOR_DOOR_OPEN_TICKS;
+            door_timer_heartbeats = ELEVATOR_DOOR_OPEN_HEARTBEATS;
         else
             my_elevator.elevator_state.behaviour = EB_IDLE;
     }
@@ -46,7 +46,7 @@ static void restore_state(const process_pair_message_t *committed) {
 static void elevator_startup_sequence(void) {
     LOGI(TAG, "startup sequence: moving down to find floor sensor...");
     int8_t current_floor = elevator_hardware_get_floor_sensor_signal();
-    const int total_ticks = ELEVATOR_STARTUP_MAX_CYCLES * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS;
+    const int total_ticks = ELEVATOR_STARTUP_MAX_CYCLES * ELEVATOR_STARTUP_HEARTBEATS_BETWEEN_FLOORS;
 
     for (int i = 0; i < total_ticks && current_floor == -1 && g_running; i++) {
         pthread_mutex_lock(&my_elevator.lock);
@@ -62,7 +62,7 @@ static void elevator_startup_sequence(void) {
     if (!g_running) return;
 
     if (current_floor == -1) {
-        LOGE(TAG, "startup sequence: no floor found after %d ticks (~%d ms) — "
+        LOGE(TAG, "startup sequence: no floor found after %d heartbeats (~%d ms) — "
                   "elevator may be out of bounds or motor is cut. Shutting down.",
              total_ticks, total_ticks * ELEVATOR_TASK_HEARTBEAT_MS);
         g_running = 0;
@@ -88,9 +88,6 @@ void read_update_cab_state(void) {
 
 void write_elevator_state(void) {
     pthread_mutex_lock(&my_elevator.lock);
-
-    // Motor runs only when actively moving — dirn carries travel direction semantics
-    // and must not drive the motor while the door is open or the elevator is idle.
     elevator_hardware_motor_direction_t safe_dirn = DIRN_STOP;
     if (my_elevator.elevator_state.behaviour == EB_MOVING) {
         safe_dirn = my_elevator.elevator_state.dirn;
@@ -176,7 +173,7 @@ static void elevator_cleanup(task_handle_t *self) {
 }
 
 static void *elevator_entry(task_handle_t *self) {
-    int tick = 0;
+    size_t tick = 0;
     elevator_startup_sequence();
     if (self->task_resources != NULL)
         restore_state((const process_pair_message_t *)self->task_resources);
@@ -190,7 +187,7 @@ static void *elevator_entry(task_handle_t *self) {
             while (g_running && elevator_hardware_init(NULL, NULL) != 0)
                 usleep(1000 * ELEVATOR_TASK_HEARTBEAT_MS);
             if (!g_running) break;
-            door_timer_ticks = 0;
+            door_timer_heartbeats = 0;
             elevator_startup_sequence();
             continue;
         }
@@ -210,10 +207,10 @@ static void *elevator_entry(task_handle_t *self) {
         }
 
         elevator_local_t local = take_snapshot();
-        elevator_fsm_update(&local);
+        elevator_control_update(&local);
         commit_snapshot(&local);
 
-        if (++tick % 10 == 0)
+        if (++tick % ELEVATOR_HEARTBEATS_PER_LOGGED_STATE == 0)
             log_elevator_state(&local);
 
         write_elevator_state();

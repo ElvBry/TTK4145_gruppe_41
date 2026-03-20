@@ -9,11 +9,11 @@
 #include <sys/eventfd.h>
 
 #include <rtsystem/rtsystem_config.h>
-#include <rtsystem/core/task_helper.h>
+#include <rtsystem/util/task_helper.h>
 #include "rtsystem/tasks/process_pair_backup_task.h"
 #include "rtsystem/tasks/process_pair_primary_task.h"
 #include <rtsystem/messages.h>
-#include <rtsystem/core/elevator_network.h>
+#include <rtsystem/drivers/elevator_network.h>
 
 #define LOG_LEVEL LOG_LEVEL_MAIN
 #ifdef ASYNC_LOG

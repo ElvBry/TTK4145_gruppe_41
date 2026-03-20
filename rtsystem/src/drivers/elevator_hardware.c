@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #include <rtsystem/rtsystem_config.h>
-#include "rtsystem/core/elevator_hardware.h"
+#include "rtsystem/drivers/elevator_hardware.h"
 
 #define LOG_LEVEL LOG_LEVEL_ELEVATOR_HARDWARE
 #ifdef ASYNC_LOG

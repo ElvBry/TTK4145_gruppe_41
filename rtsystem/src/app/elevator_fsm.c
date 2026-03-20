@@ -1,6 +1,6 @@
-#include <rtsystem/core/elevator_control_helper.h>
+#include <rtsystem/app/elevator_fsm.h>
 #include <rtsystem/rtsystem_config.h>
-#include "rtsystem/core/elevator_hardware.h"
+#include "rtsystem/drivers/elevator_hardware.h"
 #include <limits.h>
 #include <string.h>
 #include <limits.h>

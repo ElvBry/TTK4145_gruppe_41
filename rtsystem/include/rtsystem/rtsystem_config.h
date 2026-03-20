@@ -26,10 +26,11 @@
 #define PROCESS_PAIR_HEARTBEAT_TIMEOUT_MS 1000
 
 #define ELEVATOR_TASK_HEARTBEAT_MS 50
-#define ELEVATOR_DOOR_OPEN_TICKS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
-#define ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS (3000/ ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds, approximate time to move between floors for clean startup
-#define ELEVATOR_STARTUP_MAX_CYCLES 2 // total down-travel window = MAX_CYCLES * TICKS_BETWEEN_FLOORS
-#define TICKS_BEFORE_MOTORSTOP (3500 / ELEVATOR_TASK_HEARTBEAT_MS) // 3.5 seconds without hitting a floor sensor → motor considered stuck
+#define ELEVATOR_DOOR_OPEN_HEARTBEATS (3000 / ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
+#define ELEVATOR_STARTUP_HEARTBEATS_BETWEEN_FLOORS (3000/ ELEVATOR_TASK_HEARTBEAT_MS) // 3 seconds
+#define ELEVATOR_STARTUP_MAX_CYCLES 2
+#define ELEVATOR_HEARTBEATS_BEFORE_MOTORSTOP (3500 / ELEVATOR_TASK_HEARTBEAT_MS) // 3.5 seconds without hitting a floor sensor -> motor considered stuck
+#define ELEVATOR_HEARTBEATS_PER_LOGGED_STATE 10
 
 // Ports and IP used for sockets (elevator_hardware and process pair uses TCP)
 // Elevator 0: hw=15657, pp=8081 | Elevator 1: hw=15658, pp=8082 | etc.
@@ -59,7 +60,7 @@
 //#define ELEVATOR_NET_IP_LIST           { "127.0.0.1", "127.0.0.1", "127.0.0.1" } // for testing on own machine
 //#define ELEVATOR_NET_IP_LIST           { "100.10.23.1", "100.10.23.2", "100.10.23.3" } // for testing on lab if able to test address
 #define ELEVATOR_NET_IP_LIST           { "255.255.255.255", "255.255.255.255", "255.255.255.255" } // broadcast
-#define ELEVATOR_NET_MAX_LOSSES        8     // consecutive missed ticks before disconnect
+#define ELEVATOR_NET_MAX_LOSSES        8     // consecutive missed heartbeats before disconnect
 
 // Per-module log levels from log_helper.h or async_log_helper.h (only used for ease of development)
 #define LOG_LEVEL_MAIN              LOG_LEVEL_DEBUG
