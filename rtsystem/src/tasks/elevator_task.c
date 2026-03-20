@@ -46,7 +46,7 @@ static void restore_state(const process_pair_message_t *committed) {
 static void elevator_startup_sequence(void) {
     LOGI(TAG, "startup sequence: moving down to find floor sensor...");
     int8_t current_floor = elevator_hardware_get_floor_sensor_signal();
-    const int total_ticks = ELEVATOR_STARTUP_MAX_CYCLES * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS_MS;
+    const int total_ticks = ELEVATOR_STARTUP_MAX_CYCLES * ELEVATOR_STARTUP_TICKS_BETWEEN_FLOORS;
 
     for (int i = 0; i < total_ticks && current_floor == -1 && g_running; i++) {
         pthread_mutex_lock(&my_elevator.lock);
